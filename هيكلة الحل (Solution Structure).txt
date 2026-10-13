@@ -1,0 +1,1003 @@
+HisabTak.sln
+│
+├── src/
+│   │
+│   ├── HisabTak.Domain/                     (طبقة النطاق - لا تعتمد على أي شيء)
+│   │   ├── Entities/
+│   │   │   ├── Accounting/                  (Account, JournalEntry, JournalLine, AccountGroup, FiscalPeriod)
+│   │   │   ├── Inventory/                   (Item, ItemUnit, ItemPrice, Warehouse, StockMovement, ItemComponent)
+│   │   │   ├── Sales/                       (SalesInvoice, SalesInvoiceLine, SalesReturn, Quotation)
+│   │   │   ├── Purchases/                   (PurchaseInvoice, PurchaseInvoiceLine, PurchaseReturn, PurchaseOrder)
+│   │   │   ├── Customs/                     (CustomsClearanceInvoice)  // فاتورة التخليص
+│   │   │   ├── Cash/                        (ReceiptVoucher, PaymentVoucher, CashDrawer, CashDrawerClosing)
+│   │   │   ├── HR/                          (Employee, Payroll, Attendance, Advance)
+│   │   │   ├── Setup/                       (Branch, Center, Currency, Unit, Department, Location, CompanyInfo)
+│   │   │   ├── Security/                    (User, Role, Permission, UserPermission, AuditLog)
+│   │   │   ├── Promotions/                  (Coupon)
+│   │   │   └── MultiCompany/                (CompanyFile, DataTransferLog)
+│   │   ├── Enums/                           (DocumentType, VoucherType, PriceTier, AccountNature...)
+│   │   ├── ValueObjects/                    (Money, ExchangeRate)
+│   │   ├── Interfaces/                      (IRepository<T>, IUnitOfWork - عقود فقط)
+│   │   └── Common/                          (BaseEntity, ISoftDeletable, IAuditable)
+│   │
+│   ├── HisabTak.Application/                (طبقة منطق الأعمال - Use Cases)
+│   │   ├── Accounting/
+│   │   │   ├── Services/                    (AccountService, JournalService, ClosingReportsService)
+│   │   │   ├── DTOs/
+│   │   │   └── Validators/                  (FluentValidation)
+│   │   ├── Inventory/
+│   │   │   ├── Services/                    (ItemService, StockService, PricingService)
+│   │   ├── Sales/
+│   │   │   ├── Services/                    (SalesInvoiceService, POSService)
+│   │   ├── Purchases/
+│   │   ├── Cash/
+│   │   ├── HR/
+│   │   ├── Reports/                         (ReportEngineService - يبني كل التقارير)
+│   │   ├── Security/                        (AuthService, PermissionService, AuditService)
+│   │   ├── Common/
+│   │   │   ├── Interfaces/                  (ICurrentUserService, ICurrentBranchService)
+│   │   │   └── Mappings/                    (AutoMapper Profiles)
+│   │   └── DependencyInjection.cs
+│   │
+│   ├── HisabTak.Infrastructure/             (طبقة البنية التحتية)
+│   │   ├── Persistence/
+│   │   │   ├── HisabTakDbContext.cs         (EF Core)
+│   │   │   ├── Configurations/              (Fluent API لكل Entity)
+│   │   │   ├── Repositories/                (تنفيذ IRepository)
+│   │   │   ├── UnitOfWork.cs
+│   │   │   └── Migrations/
+│   │   ├── ReportsSql/                      (Stored Procedures / SQL خام للتقارير الثقيلة عبر Dapper)
+│   │   ├── FileStorage/                     (شعارات، صور أصناف، نسخ احتياطي)
+│   │   ├── Printing/                        (QuestPDF templates - فواتير/تقارير)
+│   │   ├── Excel/                           (ClosedXML - استيراد/تصدير)
+│   │   ├── Barcode/                         (ZXing.Net)
+│   │   └── DependencyInjection.cs
+│   │
+│   ├── HisabTak.WPF/                        (طبقة العرض - MVVM)
+│   │   ├── App.xaml / App.xaml.cs           (DI Container، Startup)
+│   │   ├── Views/
+│   │   │   ├── Shell/                       (MainWindow, NavigationShell, Dashboard)
+│   │   │   ├── Setup/                       (شاشة عامة واحدة لكل من: فروع/مراكز/وحدات/أقسام/مستودعات/مواقع)
+│   │   │   ├── Accounting/                  (ChartOfAccounts, JournalEntry, AccountStatement)
+│   │   │   ├── Documents/                   (DocumentEditorView - Component موحّد للفواتير/المردودات/الأوامر/التخليص)
+│   │   │   ├── Vouchers/                    (ReceiptVoucherView, PaymentVoucherView)
+│   │   │   ├── Inventory/                   (ItemsView, StockReportsView)
+│   │   │   ├── POS/                         (CashierView - تعمل باللمس)
+│   │   │   ├── HR/                          (PayrollView)
+│   │   │   ├── Reports/                     (ClosingReports, TaxReports...)
+│   │   │   ├── Security/                    (UsersView, PermissionsTreeView, AuditLogView)
+│   │   │   └── Settings/                    (SystemSettingsView, CouponsView, BackupView)
+│   │   ├── ViewModels/                      (مطابقة لهيكل Views - CommunityToolkit.Mvvm)
+│   │   ├── Controls/                        (UserControls قابلة لإعادة الاستخدام: SearchableComboBox, ItemsGridEditor...)
+│   │   ├── Converters/, Behaviors/, Themes/ (Fluent/Material Styles, Dark/Light)
+│   │   ├── Resources/                       (ResourceDictionaries, Icons SVG)
+│   │   └── Services/                        (NavigationService, DialogService)
+│   │
+│   └── HisabTak.Shared/                     (ثوابت وأدوات مشتركة بين كل الطبقات)
+│
+├── tests/
+│   ├── HisabTak.Domain.Tests/
+│   ├── HisabTak.Application.Tests/          (اختبارات منطق الحسابات الختامية، ترصيد القيود، الأسعار)
+│   └── HisabTak.Infrastructure.Tests/
+│
+└── docs/
+    ├── ERD.drawio / schema.sql
+    └── screens-spec.md
+
+بناء الهيكلة البرمجية الفعلية (Solution Structure) — بالتفصيل الكامل
+
+الخطوة 1: إنشاء الـ Solution والمشاريع (الأوامر الفعلية)
+
+# إنشاء الـ Solution
+dotnet new sln -n HisabTak
+
+# إنشاء المشاريع الخمسة
+dotnet new classlib -n HisabTak.Domain         -f net8.0
+dotnet new classlib -n HisabTak.Application    -f net8.0
+dotnet new classlib -n HisabTak.Infrastructure -f net8.0
+dotnet new wpf      -n HisabTak.WPF            -f net8.0-windows
+dotnet new classlib -n HisabTak.Shared         -f net8.0
+
+# إنشاء مشاريع الاختبارات
+dotnet new xunit -n HisabTak.Application.Tests -f net8.0
+dotnet new xunit -n HisabTak.Domain.Tests      -f net8.0
+
+# إضافة كل المشاريع للـ Solution
+dotnet sln add src/HisabTak.Domain/HisabTak.Domain.csproj
+dotnet sln add src/HisabTak.Application/HisabTak.Application.csproj
+dotnet sln add src/HisabTak.Infrastructure/HisabTak.Infrastructure.csproj
+dotnet sln add src/HisabTak.WPF/HisabTak.WPF.csproj
+dotnet sln add src/HisabTak.Shared/HisabTak.Shared.csproj
+dotnet sln add tests/HisabTak.Application.Tests/HisabTak.Application.Tests.csproj
+dotnet sln add tests/HisabTak.Domain.Tests/HisabTak.Domain.Tests.csproj
+
+# ربط المراجع بين المشاريع (اتجاه الاعتماد: WPF → Application → Domain، Infrastructure → Application + Domain)
+dotnet add src/HisabTak.Application/HisabTak.Application.csproj reference src/HisabTak.Domain/HisabTak.Domain.csproj
+dotnet add src/HisabTak.Infrastructure/HisabTak.Infrastructure.csproj reference src/HisabTak.Domain/HisabTak.Domain.csproj
+dotnet add src/HisabTak.Infrastructure/HisabTak.Infrastructure.csproj reference src/HisabTak.Application/HisabTak.Application.csproj
+dotnet add src/HisabTak.WPF/HisabTak.WPF.csproj reference src/HisabTak.Application/HisabTak.Application.csproj
+dotnet add src/HisabTak.WPF/HisabTak.WPF.csproj reference src/HisabTak.Infrastructure/HisabTak.Infrastructure.csproj
+dotnet add src/HisabTak.Domain/HisabTak.Domain.csproj reference src/HisabTak.Shared/HisabTak.Shared.csproj
+
+قاعدة اتجاه الاعتماد الذهبية (Dependency Rule):
+
+HisabTak.WPF  ──depends on──>  HisabTak.Application  ──depends on──>  HisabTak.Domain
+      │                                                                      ▲
+      └──────────depends on──> HisabTak.Infrastructure ────────────────────┘
+
+الخطوة 2: حزم NuGet المطلوبة لكل مشروع
+
+# Domain: لا يحتاج أي حزمة خارجية عادةً (نظافة تامة)
+
+# Application:
+dotnet add src/HisabTak.Application package FluentValidation
+dotnet add src/HisabTak.Application package AutoMapper
+dotnet add src/HisabTak.Application package Microsoft.Extensions.DependencyInjection.Abstractions
+
+# Infrastructure:
+dotnet add src/HisabTak.Infrastructure package Microsoft.EntityFrameworkCore.SqlServer
+dotnet add src/HisabTak.Infrastructure package Microsoft.EntityFrameworkCore.Design
+dotnet add src/HisabTak.Infrastructure package Dapper
+dotnet add src/HisabTak.Infrastructure package QuestPDF
+dotnet add src/HisabTak.Infrastructure package ClosedXML
+dotnet add src/HisabTak.Infrastructure package ZXing.Net
+dotnet add src/HisabTak.Infrastructure package Serilog.Extensions.Logging
+dotnet add src/HisabTak.Infrastructure package Serilog.Sinks.File
+dotnet add src/HisabTak.Infrastructure package BCrypt.Net-Next
+
+# WPF:
+dotnet add src/HisabTak.WPF package CommunityToolkit.Mvvm
+dotnet add src/HisabTak.WPF package Microsoft.Extensions.Hosting
+dotnet add src/HisabTak.WPF package MaterialDesignThemes
+
+الخطوة 3: نماذج فعلية لأهم الملفات بكل طبقة
+
+📁 HisabTak.Domain/Common/BaseEntity.cs
+
+namespace HisabTak.Domain.Common;
+
+public abstract class BaseEntity
+{
+    public bool IsDeleted { get; protected set; }
+    public DateTime CreatedAt { get; protected set; } = DateTime.Now;
+    public DateTime? ModifiedAt { get; protected set; }
+
+    public void MarkDeleted() => IsDeleted = true;
+    public void Restore() => IsDeleted = false;
+    public void MarkModified() => ModifiedAt = DateTime.Now;
+}
+
+📁 HisabTak.Domain/Entities/Accounting/JournalEntry.cs
+
+using HisabTak.Domain.Common;
+using HisabTak.Domain.Exceptions;
+
+namespace HisabTak.Domain.Entities.Accounting;
+
+public class JournalEntry : BaseEntity
+{
+    public long JournalEntryId { get; private set; }
+    public int EntryNumber { get; private set; }
+    public int FiscalPeriodId { get; private set; }
+    public DateTime EntryDate { get; private set; }
+    public int DocumentTypeId { get; private set; }
+    public long? SourceDocumentId { get; private set; }
+    public string? Description { get; private set; }
+
+    private readonly List<JournalLine> _lines = new();
+    public IReadOnlyCollection<JournalLine> Lines => _lines.AsReadOnly();
+
+    // منطق العمل الأساسي يعيش هنا داخل الـ Domain، وليس متروكاً للواجهة
+    public void AddLine(JournalLine line)
+    {
+        _lines.Add(line);
+    }
+
+    public void ValidateBalance()
+    {
+        var totalDebit = _lines.Sum(l => l.DebitAmount);
+        var totalCredit = _lines.Sum(l => l.CreditAmount);
+
+        if (totalDebit != totalCredit)
+            throw new UnbalancedJournalEntryException(totalDebit, totalCredit);
+    }
+}
+
+📁 HisabTak.Application/Accounting/Services/JournalService.cs
+
+using HisabTak.Application.Common.Interfaces;
+using HisabTak.Domain.Entities.Accounting;
+
+namespace HisabTak.Application.Accounting.Services;
+
+public class JournalService : IJournalService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUserService _currentUser;
+
+    public JournalService(IUnitOfWork unitOfWork, ICurrentUserService currentUser)
+    {
+        _unitOfWork = unitOfWork;
+        _currentUser = currentUser;
+    }
+
+    public async Task<long> CreateJournalEntryAsync(CreateJournalEntryDto dto)
+    {
+        var entry = JournalEntry.Create(dto.EntryDate, dto.DocumentTypeId, dto.Description);
+
+        foreach (var lineDto in dto.Lines)
+        {
+            entry.AddLine(JournalLine.Create(
+                lineDto.AccountId, lineDto.DebitAmount, lineDto.CreditAmount, lineDto.CurrencyId));
+        }
+
+        entry.ValidateBalance();   // يرمي استثناء تلقائياً لو غير متوازن — الواجهة فقط تعرض رسالة الخطأ
+
+        await _unitOfWork.JournalEntries.AddAsync(entry);
+        await _unitOfWork.SaveChangesAsync();
+
+        return entry.JournalEntryId;
+    }
+}
+
+📁 HisabTak.Infrastructure/Persistence/HisabTakDbContext.cs
+
+using Microsoft.EntityFrameworkCore;
+using HisabTak.Domain.Entities.Accounting;
+using HisabTak.Domain.Entities.Inventory;
+
+namespace HisabTak.Infrastructure.Persistence;
+
+public class HisabTakDbContext : DbContext
+{
+    public HisabTakDbContext(DbContextOptions<HisabTakDbContext> options) : base(options) { }
+
+    public DbSet<Account> Accounts => Set<Account>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<Item> Items => Set<Item>();
+    // ... باقي الـ DbSets
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(HisabTakDbContext).Assembly);
+
+        // فلتر عام تلقائي: أي استعلام يتجاهل السجلات المحذوفة (IsDeleted=1) بدون كتابة WHERE يدوياً بكل مكان
+        modelBuilder.Entity<Account>().HasQueryFilter(a => !a.IsDeleted);
+        modelBuilder.Entity<Item>().HasQueryFilter(i => !i.IsDeleted);
+        // ... لكل كيان له IsDeleted
+    }
+}
+
+📁 HisabTak.WPF/App.xaml.cs — نقطة التجميع (Composition Root)
+
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using HisabTak.Application;
+using HisabTak.Infrastructure;
+
+namespace HisabTak.WPF;
+
+public partial class App : Application
+{
+    public static IHost AppHost { get; private set; } = null!;
+
+    public App()
+    {
+        AppHost = Host.CreateDefaultBuilder()
+            .ConfigureServices((context, services) =>
+            {
+                // كل طبقة تسجّل خدماتها بملف DependencyInjection.cs خاص بها
+                services.AddApplicationServices();
+                services.AddInfrastructureServices(context.Configuration);
+
+                // تسجيل الشاشات والـ ViewModels
+                services.AddSingleton<MainWindow>();
+                services.AddTransient<Views.Accounting.ChartOfAccountsView>();
+                services.AddTransient<ViewModels.Accounting.ChartOfAccountsViewModel>();
+                // ... باقي الشاشات
+            })
+            .Build();
+    }
+
+    protected override async void OnStartup(StartupEventArgs e)
+    {
+        await AppHost.StartAsync();
+        var mainWindow = AppHost.Services.GetRequiredService<MainWindow>();
+        mainWindow.Show();
+        base.OnStartup(e);
+    }
+
+    protected override async void OnExit(ExitEventArgs e)
+    {
+        await AppHost.StopAsync();
+        base.OnExit(e);
+    }
+}
+
+📁 مثال ViewModel — HisabTak.WPF/ViewModels/Accounting/ChartOfAccountsViewModel.cs
+
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HisabTak.Application.Accounting.Services;
+
+namespace HisabTak.WPF.ViewModels.Accounting;
+
+public partial class ChartOfAccountsViewModel : ObservableObject
+{
+    private readonly IAccountService _accountService;
+
+    [ObservableProperty]
+    private ObservableCollection<AccountDto> accounts = new();
+
+    [ObservableProperty]
+    private AccountDto? selectedAccount;
+
+    public ChartOfAccountsViewModel(IAccountService accountService)
+    {
+        _accountService = accountService;
+    }
+
+    [RelayCommand]
+    private async Task LoadAccountsAsync()
+    {
+        var result = await _accountService.GetAllAccountsAsync();
+        Accounts = new ObservableCollection<AccountDto>(result);
+    }
+
+    [RelayCommand]
+    private async Task SaveAccountAsync()
+    {
+        if (SelectedAccount is null) return;
+        await _accountService.SaveAccountAsync(SelectedAccount);
+        await LoadAccountsAsync();
+    }
+}
+
+الخطوة 4: كيف تحل "الشاشة الموحّدة للفواتير" فعلياً بالكود؟
+هذه أهم نقطة تطبيقية توضح فائدة الهيكلة بأكملها:
+
+// شاشة واحدة فقط: TradeDocumentEditorViewModel
+// تتغير سلوكياً حسب DocumentType الممرر لها عند الفتح
+
+public partial class TradeDocumentEditorViewModel : ObservableObject
+{
+    [ObservableProperty] private DocumentTypeDto currentDocumentType;
+    [ObservableProperty] private bool showCustomsFields;      // true فقط لو DocumentType = CUSTOMS_CLEARANCE
+    [ObservableProperty] private bool showPriceTierField;     // true فقط لأنواع البيع
+    [ObservableProperty] private bool isReturnDocument;       // true للمردودات → يُظهر حقول التسديد
+
+    public void Initialize(int documentTypeId)
+    {
+        CurrentDocumentType = _documentTypeService.GetById(documentTypeId);
+        ShowCustomsFields = CurrentDocumentType.Code == "CUSTOMS_CLEARANCE";
+        ShowPriceTierField = CurrentDocumentType.Category == DocumentCategory.Sales;
+        IsReturnDocument = CurrentDocumentType.Code.Contains("RETURN");
+    }
+}
+
+
+Views و Stored Procedures للتقارير الختامية
+
+1. الرصيد الحالي لكل حساب (View أساسي يُبنى عليه كل شيء)
+
+CREATE OR ALTER VIEW vw_AccountBalances AS
+SELECT
+    a.AccountId,
+    a.AccountCode,
+    a.NameAr,
+    a.MainGroupId,
+    a.Nature,
+    a.CurrencyId,
+    a.OpeningBalance * (CASE WHEN a.OpeningBalanceNature = 1 THEN 1 ELSE -1 END)
+        + ISNULL(SUM(jl.DebitAmount - jl.CreditAmount), 0) AS NetBalance
+        -- NetBalance موجب = مدين، سالب = دائن (نظام إشارة موحّد يبسّط كل الحسابات اللاحقة)
+FROM Accounts a
+LEFT JOIN JournalLines jl ON jl.AccountId = a.AccountId
+LEFT JOIN JournalEntries je ON je.JournalEntryId = jl.JournalEntryId AND je.IsDeleted = 0
+WHERE a.IsDeleted = 0
+GROUP BY a.AccountId, a.AccountCode, a.NameAr, a.MainGroupId, a.Nature, a.CurrencyId, 
+         a.OpeningBalance, a.OpeningBalanceNature;
+
+2. Stored Procedure: حساب المتاجرة (Trading Account)
+
+CREATE OR ALTER PROCEDURE sp_GetTradingAccountReport
+    @FromDate DATE,
+    @ToDate DATE,
+    @CurrencyId INT,
+    @BranchId INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- مخزون أول المدة: نجمع كل حركات المخزون (بالتكلفة) قبل @FromDate
+    DECLARE @OpeningStockValue DECIMAL(18,2) =
+        (SELECT ISNULL(SUM(CASE WHEN sm.Direction = 1 THEN sm.Quantity * sm.UnitCost
+                                  ELSE -sm.Quantity * sm.UnitCost END), 0)
+         FROM StockMovements sm
+         WHERE sm.MovementDate < @FromDate AND sm.IsDeleted = 0);
+
+    -- إجمالي المشتريات خلال الفترة (فواتير الشراء نقد+آجل)
+    DECLARE @TotalPurchases DECIMAL(18,2) =
+        (SELECT ISNULL(SUM(td.NetTotal), 0)
+         FROM TradeDocuments td
+         INNER JOIN DocumentTypes dt ON dt.DocumentTypeId = td.DocumentTypeId
+         WHERE dt.Code IN ('PURCHASE_CASH','PURCHASE_CREDIT')
+           AND td.DocumentDate BETWEEN @FromDate AND @ToDate
+           AND td.CurrencyId = @CurrencyId
+           AND td.Status = 1 AND td.IsDeleted = 0
+           AND (@BranchId IS NULL OR td.BranchId = @BranchId));
+
+    -- إجمالي مردودات المشتريات
+    DECLARE @PurchaseReturns DECIMAL(18,2) =
+        (SELECT ISNULL(SUM(td.NetTotal), 0)
+         FROM TradeDocuments td
+         INNER JOIN DocumentTypes dt ON dt.DocumentTypeId = td.DocumentTypeId
+         WHERE dt.Code IN ('PURCHASE_RETURN_CASH','PURCHASE_RETURN_CREDIT')
+           AND td.DocumentDate BETWEEN @FromDate AND @ToDate
+           AND td.CurrencyId = @CurrencyId
+           AND td.Status = 1 AND td.IsDeleted = 0
+           AND (@BranchId IS NULL OR td.BranchId = @BranchId));
+
+    DECLARE @NetPurchases DECIMAL(18,2) = @TotalPurchases - @PurchaseReturns;
+
+    -- مخزون آخر المدة: قيمة أرصدة المخزون الحالية بتاريخ @ToDate
+    DECLARE @ClosingStockValue DECIMAL(18,2) =
+        (SELECT ISNULL(SUM(sb.Quantity * ist.AverageCost), 0)
+         FROM StockBalances sb
+         INNER JOIN ItemStatistics ist ON ist.ItemId = sb.ItemId);
+
+    DECLARE @COGS DECIMAL(18,2) = @OpeningStockValue + @NetPurchases - @ClosingStockValue;
+                                    -- تكلفة البضاعة المباعة
+
+    -- إجمالي المبيعات وصافيها
+    DECLARE @TotalSales DECIMAL(18,2) =
+        (SELECT ISNULL(SUM(td.NetTotal), 0)
+         FROM TradeDocuments td
+         INNER JOIN DocumentTypes dt ON dt.DocumentTypeId = td.DocumentTypeId
+         WHERE dt.Code IN ('SALES_CASH','SALES_CREDIT')
+           AND td.DocumentDate BETWEEN @FromDate AND @ToDate
+           AND td.CurrencyId = @CurrencyId
+           AND td.Status = 1 AND td.IsDeleted = 0
+           AND (@BranchId IS NULL OR td.BranchId = @BranchId));
+
+    DECLARE @SalesReturns DECIMAL(18,2) =
+        (SELECT ISNULL(SUM(td.NetTotal), 0)
+         FROM TradeDocuments td
+         INNER JOIN DocumentTypes dt ON dt.DocumentTypeId = td.DocumentTypeId
+         WHERE dt.Code IN ('SALES_RETURN_CASH','SALES_RETURN_CREDIT')
+           AND td.DocumentDate BETWEEN @FromDate AND @ToDate
+           AND td.CurrencyId = @CurrencyId
+           AND td.Status = 1 AND td.IsDeleted = 0
+           AND (@BranchId IS NULL OR td.BranchId = @BranchId));
+
+    DECLARE @NetSales DECIMAL(18,2) = @TotalSales - @SalesReturns;
+    DECLARE @GrossProfit DECIMAL(18,2) = @NetSales - @COGS;
+
+    -- إرجاع كل الأرقام بصف واحد نظيف
+    SELECT
+        @OpeningStockValue  AS OpeningStockValue,
+        @TotalPurchases     AS TotalPurchases,
+        @PurchaseReturns    AS PurchaseReturns,
+        @NetPurchases       AS NetPurchases,
+        @ClosingStockValue  AS ClosingStockValue,
+        @COGS               AS CostOfGoodsSold,
+        @TotalSales         AS TotalSales,
+        @SalesReturns       AS SalesReturns,
+        @NetSales           AS NetSales,
+        @GrossProfit        AS GrossProfitOrLoss;
+END
+
+3. Stored Procedure: الأرباح والخسائر (يعتمد على المتاجرة)
+
+CREATE OR ALTER PROCEDURE sp_GetProfitAndLossReport
+    @FromDate DATE,
+    @ToDate DATE,
+    @CurrencyId INT,
+    @BranchId INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- إجمالي الربح/الخسارة من المتاجرة (نستدعي نفس منطق المتاجرة كدالة مساعدة أو نكرر الحساب هنا)
+    DECLARE @GrossProfit DECIMAL(18,2);
+    -- (بالتطبيق الفعلي: استخراج @GrossProfit من نتيجة sp_GetTradingAccountReport عبر جدول مؤقت)
+
+    -- الإيرادات الثانوية (كل حسابات مجموعة "الإيرادات" ما عدا المبيعات نفسها)
+    SELECT @TotalOtherRevenue = ISNULL(SUM(ab.NetBalance) * -1, 0)   -- الإيرادات دائنة، نقلبها لموجب
+    FROM vw_AccountBalances ab
+    INNER JOIN AccountMainGroups mg ON mg.MainGroupId = ab.MainGroupId
+    WHERE mg.Code LIKE '4%'   -- مجموعة الإيرادات (استثناء حساب المبيعات الرئيسي لو مطلوب تفصيل أدق)
+      AND ab.CurrencyId = @CurrencyId;
+
+    -- المصروفات (كل حسابات مجموعة "المصروفات" مفصّلة حساب حساب)
+    SELECT
+        a.AccountId,
+        a.NameAr,
+        ab.NetBalance AS ExpenseAmount
+    INTO #Expenses
+    FROM vw_AccountBalances ab
+    INNER JOIN Accounts a ON a.AccountId = ab.AccountId
+    INNER JOIN AccountMainGroups mg ON mg.MainGroupId = ab.MainGroupId
+    WHERE mg.Code LIKE '3%'   -- مجموعة المصروفات
+      AND ab.CurrencyId = @CurrencyId
+      AND ab.NetBalance <> 0;
+
+    DECLARE @TotalExpenses DECIMAL(18,2) = (SELECT ISNULL(SUM(ExpenseAmount), 0) FROM #Expenses);
+    DECLARE @NetProfit DECIMAL(18,2) = @GrossProfit + @TotalOtherRevenue - @TotalExpenses;
+
+    -- النتيجة: ملخص + تفصيل المصروفات
+    SELECT @GrossProfit AS GrossProfit, @TotalOtherRevenue AS OtherRevenue,
+           @TotalExpenses AS TotalExpenses, @NetProfit AS NetProfitOrLoss;
+
+    SELECT * FROM #Expenses ORDER BY ExpenseAmount DESC;
+
+    DROP TABLE #Expenses;
+END
+
+4. الميزانية العمومية وميزان المراجعة (أبسط — استعلام مباشر على vw_AccountBalances)
+
+CREATE OR ALTER PROCEDURE sp_GetBalanceSheetReport
+    @AsOfDate DATE,
+    @CurrencyId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- الميزانية = كل حسابات الأصول والالتزامات وحقوق الملكية (مجموعات 1 و 2) بأرصدتها حتى تاريخ معين
+    SELECT a.AccountCode, a.NameAr, mg.Code AS MainGroupCode, mg.NameAr AS MainGroupName,
+           ab.NetBalance
+    FROM vw_AccountBalances ab
+    INNER JOIN Accounts a ON a.AccountId = ab.AccountId
+    INNER JOIN AccountMainGroups mg ON mg.MainGroupId = ab.MainGroupId
+    WHERE (mg.Code LIKE '1%' OR mg.Code LIKE '2%')
+      AND ab.CurrencyId = @CurrencyId
+      AND ab.NetBalance <> 0
+    ORDER BY mg.Code, a.AccountCode;
+END
+GO
+
+CREATE OR ALTER PROCEDURE sp_GetTrialBalanceReport
+    @AsOfDate DATE,
+    @CurrencyId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- ميزان المراجعة = كل الحسابات بلا استثناء (كل المجموعات) بأرصدتها
+    SELECT a.AccountCode, a.NameAr, mg.Code AS MainGroupCode,
+           CASE WHEN ab.NetBalance > 0 THEN ab.NetBalance ELSE 0 END AS DebitBalance,
+           CASE WHEN ab.NetBalance < 0 THEN ABS(ab.NetBalance) ELSE 0 END AS CreditBalance
+    FROM vw_AccountBalances ab
+    INNER JOIN Accounts a ON a.AccountId = ab.AccountId
+    INNER JOIN AccountMainGroups mg ON mg.MainGroupId = ab.MainGroupId
+    WHERE ab.CurrencyId = @CurrencyId AND ab.NetBalance <> 0
+    ORDER BY mg.Code, a.AccountCode;
+END
+
+شرح القرارات المهمة
+
+1. NetBalance بنظام إشارة موحّد (موجب=مدين، سالب=دائن) داخل vw_AccountBalances — هذا يبسّط جداً كل الحسابات اللاحقة (لا حاجة لعمودين منفصلين مدين/دائن بكل View، فقط رقم واحد بإشارة واضحة)، ويُحوَّل للعرض التقليدي (مدين/دائن بعمودين) فقط بميزان المراجعة النهائي.
+
+2. لماذا Stored Procedures وليس LINQ/EF Core لهذه التقارير تحديداً؟
+لأن هذه الحسابات تحتاج تجميعات متداخلة معقدة (مخزون أول مدة + مشتريات - مردودات - مخزون آخر مدة...) على آلاف السطور المحتملة، وSQL الخام هنا أسرع بمراحل من ترجمة LINQ المكافئة، ويعطينا تحكماً دقيقاً بخطة التنفيذ (Execution Plan) لكل تقرير مالي حسّاس.
+
+3. طريقة الاستدعاء من طبقة Application عبر Dapper:
+
+public async Task<TradingAccountDto> GetTradingAccountAsync(DateTime from, DateTime to, int currencyId)
+{
+    using var connection = _connectionFactory.CreateConnection();
+    return await connection.QuerySingleAsync<TradingAccountDto>(
+        "sp_GetTradingAccountReport",
+        new { FromDate = from, ToDate = to, CurrencyId = currencyId },
+        commandType: CommandType.StoredProcedure);
+}
+
+4. معالجة "لا تجميع بين العملات" (قرارك السابق) — لاحظ أن كل Stored Procedure يأخذ @CurrencyId كمعامل إلزامي ويُصفّي به مباشرة، فتُشغَّل مرتين منفصلتين (مرة لكل عملة) وتُعرض بتقريرين منفصلين تماماً بالواجهة — تماماً كسلوك النظام القديم الذي وافقت عليه.
+
+
+خدمة الترحيل التلقائي للقيود (Auto-Posting Service)
+
+هذه الخدمة هي "القلب الخفي" للنظام — كل عملية مالية (فاتورة، سند، تسوية) يجب أن تولّد قيداً محاسبياً صحيحاً ومتوازناً تلقائياً، دون أن يكتب المستخدم القيد يدوياً أبداً.
+
+1. التصميم: نمط "استراتيجية الترحيل" (Posting Strategy Pattern)
+
+بما أن كل نوع مستند له قواعد ترحيل مختلفة (فاتورة بيع نقدي تخصم من الصندوق وتُضيف للمبيعات، بينما فاتورة بيع آجل تُضيف للعميل بدل الصندوق)، نصمم واجهة موحّدة ولكل نوع مستند "استراتيجية" منفصلة تنفّذها:
+
+// HisabTak.Application/Accounting/Interfaces/IPostingStrategy.cs
+namespace HisabTak.Application.Accounting.Interfaces;
+
+public interface IPostingStrategy
+{
+    string DocumentTypeCode { get; }   // 'SALES_CASH', 'PURCHASE_CREDIT'...
+    Task<JournalEntry> BuildJournalEntryAsync(object sourceDocument);
+}
+
+// HisabTak.Application/Accounting/Services/PostingStrategies/SalesCashPostingStrategy.cs
+namespace HisabTak.Application.Accounting.Services.PostingStrategies;
+
+public class SalesCashPostingStrategy : IPostingStrategy
+{
+    public string DocumentTypeCode => "SALES_CASH";
+
+    private readonly IAccountLookupService _accountLookup;
+
+    public SalesCashPostingStrategy(IAccountLookupService accountLookup)
+    {
+        _accountLookup = accountLookup;
+    }
+
+    public async Task<JournalEntry> BuildJournalEntryAsync(object sourceDocument)
+    {
+        var invoice = (TradeDocument)sourceDocument;
+
+        var entry = JournalEntry.Create(
+            entryDate: invoice.DocumentDate,
+            documentTypeId: invoice.DocumentTypeId,
+            sourceDocumentId: invoice.TradeDocumentId,
+            description: $"فاتورة بيع نقدي رقم {invoice.DocumentNumber}");
+
+        // مدين: الصندوق (الخزينة المختارة بالفاتورة)
+        entry.AddLine(JournalLine.Create(
+            accountId: invoice.CashboxAccountId!.Value,
+            debit: invoice.NetTotal, credit: 0,
+            currencyId: invoice.CurrencyId, exchangeRate: invoice.ExchangeRate));
+
+        // دائن: حساب المبيعات (يُحدَّد تلقائياً من إعدادات النظام أو من القسم)
+        var salesAccountId = await _accountLookup.GetSalesRevenueAccountAsync();
+        entry.AddLine(JournalLine.Create(
+            accountId: salesAccountId,
+            debit: 0, credit: invoice.NetTotal,
+            currencyId: invoice.CurrencyId, exchangeRate: invoice.ExchangeRate));
+
+        // لو فيه ضريبة، سطر إضافي لحساب "الضريبة المستحقة"
+        if (invoice.TaxValue > 0)
+        {
+            var taxAccountId = await _accountLookup.GetTaxPayableAccountAsync();
+            // تعديل حساب المبيعات ليكون بدون الضريبة + سطر ضريبة منفصل
+            entry.AddLine(JournalLine.Create(
+                accountId: taxAccountId, debit: 0, credit: invoice.TaxValue,
+                currencyId: invoice.CurrencyId, exchangeRate: invoice.ExchangeRate));
+        }
+
+        entry.ValidateBalance();   // يتأكد أن مدين = دائن قبل الحفظ (يرمي استثناء لو لا)
+        return entry;
+    }
+}
+
+// مثال ثانٍ: فاتورة بيع آجل — نفس الواجهة، منطق مختلف
+public class SalesCreditPostingStrategy : IPostingStrategy
+{
+    public string DocumentTypeCode => "SALES_CREDIT";
+
+    public async Task<JournalEntry> BuildJournalEntryAsync(object sourceDocument)
+    {
+        var invoice = (TradeDocument)sourceDocument;
+        var entry = JournalEntry.Create(invoice.DocumentDate, invoice.DocumentTypeId,
+            invoice.TradeDocumentId, $"فاتورة بيع آجل رقم {invoice.DocumentNumber}");
+
+        // مدين: حساب العميل نفسه (وليس الصندوق) — الفرق الجوهري عن البيع النقدي
+        entry.AddLine(JournalLine.Create(invoice.AccountId!.Value, invoice.NetTotal, 0,
+            invoice.CurrencyId, invoice.ExchangeRate));
+
+        var salesAccountId = await _accountLookup.GetSalesRevenueAccountAsync();
+        entry.AddLine(JournalLine.Create(salesAccountId, 0, invoice.NetTotal,
+            invoice.CurrencyId, invoice.ExchangeRate));
+
+        entry.ValidateBalance();
+        return entry;
+    }
+}
+
+2. المُنسّق المركزي (Posting Coordinator) — يختار الاستراتيجية الصحيحة تلقائياً
+
+// HisabTak.Application/Accounting/Services/AutoPostingService.cs
+namespace HisabTak.Application.Accounting.Services;
+
+public class AutoPostingService : IAutoPostingService
+{
+    private readonly IEnumerable<IPostingStrategy> _strategies;
+    private readonly IUnitOfWork _unitOfWork;
+
+    // كل استراتيجيات الترحيل تُحقن تلقائياً هنا عبر DI (Dependency Injection)
+    public AutoPostingService(IEnumerable<IPostingStrategy> strategies, IUnitOfWork unitOfWork)
+    {
+        _strategies = strategies;
+        _unitOfWork = unitOfWork;
+    }
+
+    public async Task<long> PostDocumentAsync(string documentTypeCode, object sourceDocument)
+    {
+        var strategy = _strategies.FirstOrDefault(s => s.DocumentTypeCode == documentTypeCode)
+            ?? throw new PostingStrategyNotFoundException(documentTypeCode);
+
+        var journalEntry = await strategy.BuildJournalEntryAsync(sourceDocument);
+
+        await _unitOfWork.JournalEntries.AddAsync(journalEntry);
+        await _unitOfWork.SaveChangesAsync();
+
+        return journalEntry.JournalEntryId;
+    }
+}
+
+تسجيل كل الاستراتيجيات تلقائياً بـ DI (لا تحتاج تسجيل كل واحدة يدوياً):
+
+// HisabTak.Application/DependencyInjection.cs
+services.Scan(scan => scan
+    .FromAssemblyOf<SalesCashPostingStrategy>()
+    .AddClasses(classes => classes.AssignableTo<IPostingStrategy>())
+    .AsImplementedInterfaces()
+    .WithScopedLifetime());
+
+3. كيف تُستدعى فعلياً من خدمة الفاتورة (مثال متكامل)
+
+// HisabTak.Application/Sales/Services/TradeDocumentService.cs
+public class TradeDocumentService : ITradeDocumentService
+{
+    private readonly IAutoPostingService _postingService;
+    private readonly IStockMovementService _stockService;
+    private readonly IUnitOfWork _unitOfWork;
+
+    public async Task<long> SaveInvoiceAsync(CreateTradeDocumentDto dto)
+    {
+        // 1. إنشاء الفاتورة نفسها
+        var document = TradeDocument.Create(dto);
+        await _unitOfWork.TradeDocuments.AddAsync(document);
+        await _unitOfWork.SaveChangesAsync();   // نحفظ أولاً للحصول على TradeDocumentId
+
+        // 2. تحديث المخزون تلقائياً (خدمة منفصلة، تفصيلها بالأسفل)
+        await _stockService.ApplyStockMovementForDocumentAsync(document);
+
+        // 3. الترحيل المحاسبي التلقائي — سطر واحد فقط يُشغّل كل المنطق أعلاه
+        var journalEntryId = await _postingService.PostDocumentAsync(dto.DocumentTypeCode, document);
+
+        // 4. ربط الفاتورة بالقيد المولّد
+        document.LinkJournalEntry(journalEntryId);
+        await _unitOfWork.SaveChangesAsync();
+
+        return document.TradeDocumentId;
+    }
+}
+
+4. لماذا هذا التصميم أفضل بكثير من "قيد مكتوب يدوياً بكل شاشة"؟
+
+المشكلة بالنظام القديم (المُفترضة)	الحل بهذا التصميم
+لو مبرمج نسي كتابة سطر القيد بشاشة معينة، تختل التوازن المحاسبي بصمت	ValidateBalance() يرمي استثناءً فورياً يمنع الحفظ أصلاً لو أي قيد غير متوازن — مستحيل هيكلياً أن يمر قيد خاطئ
+تكرار نفس منطق "إنشاء قيد" بكل شاشة فاتورة (7 مرات)	استراتيجية واحدة لكل نوع مستند، منطق مركزي مكتوب مرة واحدة
+إضافة نوع مستند جديد مستقبلاً (مثلاً "فاتورة توصيل خدمة") يتطلب تعديل كود موجود بمخاطرة كسر شيء آخر	تُضاف كلاس استراتيجية جديد فقط (ServiceInvoicePostingStrategy) دون لمس أي كود موجود — مبدأ Open/Closed المعياري بالهندسة
+صعوبة اختبار "هل القيد صحيح؟" بدون تشغيل الواجهة كاملة	كل استراتيجية Class مستقل بسيط، يُختبر بوحدة اختبار منفصلة (Unit Test) بمعزل تام
+
+5. الحالة الخاصة: عكس القيد عند إلغاء مستند
+
+public async Task CancelDocumentAsync(long tradeDocumentId)
+{
+    var document = await _unitOfWork.TradeDocuments.GetByIdAsync(tradeDocumentId);
+
+    if (document.JournalEntryId.HasValue)
+    {
+        // بدل حذف القيد الأصلي (يكسر التسلسل التاريخي)، نُنشئ "قيد عكسي" (Reversal Entry)
+        var reversalEntry = await _postingService.CreateReversalEntryAsync(document.JournalEntryId.Value);
+        document.LinkReversalEntry(reversalEntry.JournalEntryId);
+    }
+
+    document.MarkCancelled();   // Status = 2، وليس حذف فعلي
+    await _unitOfWork.SaveChangesAsync();
+}
+
+خدمة تحديث المخزون التلقائية (Stock Movement Service)
+
+هذه الخدمة مسؤولة عن: تحديث StockBalances (الرصيد الحي)، تسجيل StockMovements (السجل التاريخي)، حساب التكلفة، وتحديث ItemStatistics — كل ذلك تلقائياً عند حفظ أي فاتورة.
+
+1. نفس نمط الاستراتيجية، لكن أبسط (اتجاه وارد/منصرف فقط)
+
+// HisabTak.Application/Inventory/Interfaces/IStockMovementService.cs
+namespace HisabTak.Application.Inventory.Interfaces;
+
+public interface IStockMovementService
+{
+    Task ApplyStockMovementForDocumentAsync(TradeDocument document);
+    Task ReverseStockMovementForDocumentAsync(long tradeDocumentId);
+}
+
+2. جدول تحديد الاتجاه لكل نوع مستند (Configuration بسيطة بدل Strategy معقدة)
+
+بعكس الترحيل المحاسبي (الذي يحتاج منطقاً مختلفاً جذرياً لكل نوع)، حركة المخزون فعلياً نمطان فقط: وارد أو منصرف. لذا نستخدم قاموساً بسيطاً بدل كلاسات متعددة:
+
+// HisabTak.Application/Inventory/Services/StockDirectionResolver.cs
+public static class StockDirectionResolver
+{
+    private static readonly Dictionary<string, StockDirection> _map = new()
+    {
+        ["PURCHASE_CASH"]           = StockDirection.In,
+        ["PURCHASE_CREDIT"]         = StockDirection.In,
+        ["SALES_RETURN_CASH"]       = StockDirection.In,
+        ["SALES_RETURN_CREDIT"]     = StockDirection.In,
+        ["STOCK_ADJUST_INCREASE"]   = StockDirection.In,
+        ["OPENING_BALANCE"]         = StockDirection.In,
+
+        ["SALES_CASH"]              = StockDirection.Out,
+        ["SALES_CREDIT"]            = StockDirection.Out,
+        ["PURCHASE_RETURN_CASH"]    = StockDirection.Out,
+        ["PURCHASE_RETURN_CREDIT"]  = StockDirection.Out,
+        ["STOCK_ADJUST_DECREASE"]   = StockDirection.Out,
+        ["STOCK_ISSUE"]             = StockDirection.Out,   // سند صرف مخزني
+
+        // عروض الأسعار وأوامر الشراء لا تُحرّك المخزون إطلاقاً
+        ["QUOTATION"]               = StockDirection.None,
+        ["PURCHASE_ORDER"]          = StockDirection.None,
+    };
+
+    public static StockDirection Resolve(string documentTypeCode) =>
+        _map.TryGetValue(documentTypeCode, out var dir) ? dir : StockDirection.None;
+}
+
+public enum StockDirection { None, In, Out }
+
+نقطة تصميمية مهمة: QUOTATION (عرض السعر) وPURCHASE_ORDER (أمر الشراء) مسجّلان بـ StockDirection.None — أي لا تُحرّك المخزون إطلاقاً، لأنهما مستندات "نية" وليسا عمليات فعلية. هذا يطبّق منطقاً صحيحاً كان يجب مراعاته بدقة (عرض السعر ليس بيعاً فعلياً).
+
+3. التحويل المخزني حالة خاصة (Direction مزدوج: منصرف من مصدر + وارد لهدف)
+
+// HisabTak.Application/Inventory/Services/StockMovementService.cs
+public class StockMovementService : IStockMovementService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ICostingService _costingService;
+
+    public async Task ApplyStockMovementForDocumentAsync(TradeDocument document)
+    {
+        var documentTypeCode = document.DocumentType.Code;
+
+        // حالة خاصة: التحويل المخزني (وارد ومنصرف بنفس الوقت لمستودعين مختلفين)
+        if (documentTypeCode == "STOCK_TRANSFER")
+        {
+            await ApplyTransferAsync(document);
+            return;
+        }
+
+        var direction = StockDirectionResolver.Resolve(documentTypeCode);
+        if (direction == StockDirection.None) return;   // عروض أسعار وأوامر شراء: لا شيء يحدث
+
+        foreach (var line in document.Lines)
+        {
+            // 1. تحويل الكمية للوحدة الأساسية دائماً (مهما كانت وحدة السطر: كرتون، حبة...)
+            var baseQty = await ConvertToBaseUnitAsync(line.ItemId, line.UnitId, line.Quantity);
+
+            // 2. حساب تكلفة الوحدة وقت هذه الحركة (فقط للحركات الواردة، تُستخدم لاحقاً بحساب المتوسط)
+            decimal? unitCost = direction == StockDirection.In
+                ? await _costingService.CalculateUnitCostAsync(line, document)
+                : null;
+
+            // 3. تسجيل الحركة بالسجل التاريخي (لا يُعدَّل أبداً لاحقاً)
+            await _unitOfWork.StockMovements.AddAsync(StockMovement.Create(
+                itemId: line.ItemId, warehouseId: line.WarehouseId,
+                movementDate: document.DocumentDate,
+                documentTypeId: document.DocumentTypeId,
+                sourceDocumentId: document.TradeDocumentId,
+                direction: direction, quantity: baseQty,
+                unitCost: unitCost, expiryDate: line.ExpiryDate));
+
+            // 4. تحديث الرصيد الحي (Cache) — بزيادة أو نقصان حسب الاتجاه
+            await UpdateStockBalanceAsync(line.ItemId, line.WarehouseId, line.ExpiryDate,
+                direction == StockDirection.In ? baseQty : -baseQty);
+
+            // 5. تحديث إحصائيات الصنف (آخر سعر، متوسط تكلفة...)
+            await _costingService.UpdateItemStatisticsAsync(line, document, direction);
+        }
+    }
+
+    private async Task ApplyTransferAsync(TradeDocument document)
+    {
+        foreach (var line in document.Lines)
+        {
+            var baseQty = await ConvertToBaseUnitAsync(line.ItemId, line.UnitId, line.Quantity);
+
+            // منصرف من المستودع المصدر
+            await UpdateStockBalanceAsync(line.ItemId, document.FromWarehouseId!.Value, line.ExpiryDate, -baseQty);
+            await _unitOfWork.StockMovements.AddAsync(StockMovement.Create(
+                line.ItemId, document.FromWarehouseId.Value, document.DocumentDate,
+                document.DocumentTypeId, document.TradeDocumentId, StockDirection.Out, baseQty, null, line.ExpiryDate));
+
+            // وارد للمستودع الهدف (بنفس التكلفة المنقولة، وليس تكلفة جديدة)
+            await UpdateStockBalanceAsync(line.ItemId, document.ToWarehouseId!.Value, line.ExpiryDate, baseQty);
+            await _unitOfWork.StockMovements.AddAsync(StockMovement.Create(
+                line.ItemId, document.ToWarehouseId.Value, document.DocumentDate,
+                document.DocumentTypeId, document.TradeDocumentId, StockDirection.In, baseQty, line.CostAtTime, line.ExpiryDate));
+        }
+    }
+
+    private async Task<decimal> ConvertToBaseUnitAsync(int itemId, int unitId, decimal quantity)
+    {
+        var itemUnit = await _unitOfWork.ItemUnits.GetByItemAndUnitAsync(itemId, unitId);
+        return quantity * itemUnit.ConversionFactor;   // مثال: 2 كرتون × 24 = 48 حبة
+    }
+
+    private async Task UpdateStockBalanceAsync(int itemId, int warehouseId, DateTime? expiryDate, decimal deltaQty)
+    {
+        var balance = await _unitOfWork.StockBalances.GetOrCreateAsync(itemId, warehouseId, expiryDate);
+        balance.AdjustQuantity(deltaQty);   // Domain method: يمنع الرصيد من أن يصبح سالباً لو أردنا هذا القيد لاحقاً
+    }
+}
+
+4. خدمة التكلفة (طريقتان يدعمهما إعداد النظام: آخر شراء أو متوسط تكلفة)
+
+// HisabTak.Application/Inventory/Services/CostingService.cs
+public class CostingService : ICostingService
+{
+    private readonly ISystemSettingsService _settings;
+
+    public async Task<decimal> CalculateUnitCostAsync(TradeDocumentLine line, TradeDocument document)
+    {
+        // للحركات الواردة (شراء)، التكلفة = سعر الشراء الفعلي بالفاتورة نفسها
+        return line.NetUnitPrice;
+    }
+
+    public async Task UpdateItemStatisticsAsync(TradeDocumentLine line, TradeDocument document, StockDirection direction)
+    {
+        var stats = await _unitOfWork.ItemStatistics.GetOrCreateAsync(line.ItemId);
+        var costingMethod = await _settings.GetCostingMethodAsync();   // من CompanyInfo.CostingMethod
+
+        if (direction == StockDirection.In)
+        {
+            stats.UpdateLastPurchase(line.NetUnitPrice, line.Quantity);
+
+            if (costingMethod == CostingMethod.AverageCost)
+            {
+                // المتوسط المرجّح: (الرصيد القديم × تكلفته + الوارد الجديد × تكلفته) ÷ إجمالي الكمية
+                var currentBalance = await _unitOfWork.StockBalances.GetTotalQuantityAsync(line.ItemId);
+                var newAverage = CalculateWeightedAverage(
+                    oldQty: currentBalance, oldCost: stats.AverageCost ?? 0,
+                    newQty: line.Quantity, newCost: line.NetUnitPrice);
+                stats.UpdateAverageCost(newAverage);
+            }
+            else // LastPurchasePrice
+            {
+                stats.UpdateAverageCost(line.NetUnitPrice);
+            }
+        }
+        else // Out (بيع)
+        {
+            stats.UpdateLastSale(line.NetUnitPrice, line.Quantity);
+        }
+
+        await _unitOfWork.SaveChangesAsync();
+    }
+
+    private decimal CalculateWeightedAverage(decimal oldQty, decimal oldCost, decimal newQty, decimal newCost)
+    {
+        var totalQty = oldQty + newQty;
+        if (totalQty == 0) return newCost;
+        return ((oldQty * oldCost) + (newQty * newCost)) / totalQty;
+    }
+}
+
+5. نقطة أمان مهمة: منع البيع بكمية أكبر من المتوفر (اختياري حسب إعداد)
+
+// داخل Domain Entity: StockBalance.cs
+public class StockBalance : BaseEntity
+{
+    public decimal Quantity { get; private set; }
+
+    public void AdjustQuantity(decimal delta, bool allowNegative = false)
+    {
+        var newQuantity = Quantity + delta;
+
+        if (!allowNegative && newQuantity < 0)
+            throw new InsufficientStockException(ItemId, Math.Abs(delta), Quantity);
+
+        Quantity = newQuantity;
+    }
+}
+
+بحيث عند محاولة بيع كمية أكبر من الرصيد الفعلي، يُرمى استثناء واضح قبل حفظ الفاتورة أصلاً (وليس بعد الحفظ بمشكلة رصيد سالب مكتشفة لاحقاً كما قد يحدث بأنظمة أضعف).
+
+6. الفائدة الكبرى لهذا التصميم — نقطة تكامل واحدة نظيفة
+
+لاحظ من الكود بالرسالة السابقة:
+
+await _stockService.ApplyStockMovementForDocumentAsync(document);   // سطر واحد فقط
+await _postingService.PostDocumentAsync(dto.DocumentTypeCode, document);  // سطر واحد فقط
+
+كل الفواتير السبعة (بيع، شراء، مردودات، تحويل، صرف مخزني) تمرّ بنفس هاتين الخطوتين بالضبط من TradeDocumentService — لا تكرار كود، ولا احتمال نسيان تحديث المخزون بشاشة معينة كما قد يحدث لو كان الكود منسوخاً بـ7 أماكن منفصلة.
+
+هل هذا واضح ومقبول؟ بهذا نكون أنجزنا العمود الفقري الكامل للنظام (Schema + هيكلة + التقارير الختامية + الترحيل المحاسبي التلقائي + تحديث المخزون التلقائي).
+
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

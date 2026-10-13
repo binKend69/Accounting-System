@@ -1,0 +1,1349 @@
+القسم 1: الإعدادات الأساسية والمرجعية (Setup/Reference Tables)
+-- ==========================================
+-- 1. العملات
+-- ==========================================
+CREATE TABLE Currencies (
+    CurrencyId          INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(50)  NOT NULL,           -- ريال سعودي
+    Symbol               NVARCHAR(10)  NULL,                -- ر.س
+    FractionName         NVARCHAR(30)  NULL,                -- فلس / هللة
+    ExchangeRate         DECIMAL(18,6) NOT NULL DEFAULT 1,  -- التعادل
+    ConversionType       TINYINT       NOT NULL DEFAULT 1,  -- 1=ضرب, 2=قسمة
+    IsBaseCurrency       BIT           NOT NULL DEFAULT 0,  -- العملة الأساسية للنظام (لعرض التقارير الافتراضية)
+    IsActive             BIT           NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2     NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2     NULL,
+    IsDeleted            BIT           NOT NULL DEFAULT 0   -- Soft Delete لدعم "سلة المحذوفات"
+);
+
+-- ==========================================
+-- 2. الفروع
+-- ==========================================
+CREATE TABLE Branches (
+    BranchId             INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 3. المراكز (مركز تكلفة/ربحية - Cost Centers)
+-- ==========================================
+CREATE TABLE Centers (
+    CenterId             INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    BranchId             INT NULL REFERENCES Branches(BranchId),
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 4. المستودعات
+-- ==========================================
+CREATE TABLE Warehouses (
+    WarehouseId          INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    BranchId             INT NULL REFERENCES Branches(BranchId),
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 5. الوحدات (وحدة أساسية عامة: حبة، كرتون، كيلو...)
+-- ==========================================
+CREATE TABLE Units (
+    UnitId               INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(50) NOT NULL,
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 6. الأقسام (تصنيف الأصناف)
+-- ==========================================
+CREATE TABLE Departments (
+    DepartmentId         INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    ColorHex             NVARCHAR(9)  NULL,          -- لون زر القسم بشاشة الكاشير (مثل #FFCC00)
+    DisplayOrder         INT NOT NULL DEFAULT 0,     -- توحيد تسلسل الأقسام بالكاشير
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 7. المواقع (موقع تخزين داخل المستودع - Bin Location)
+-- ==========================================
+CREATE TABLE StockLocations (
+    LocationId           INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    WarehouseId          INT NULL REFERENCES Warehouses(WarehouseId),
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 8. معلومات الشركة/الفاتورة (سطر واحد فقط - Singleton)
+-- ==========================================
+CREATE TABLE CompanyInfo (
+    CompanyInfoId        INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(200) NOT NULL,
+    NameEn               NVARCHAR(200) NULL,
+    AddressAr            NVARCHAR(300) NULL,
+    AddressEn            NVARCHAR(300) NULL,
+    Phone                NVARCHAR(30)  NULL,
+    Mobile               NVARCHAR(30)  NULL,
+    LogoPath             NVARCHAR(300) NULL,
+    StampPath            NVARCHAR(300) NULL,          -- الختم
+    UseImageInsteadOfText BIT NOT NULL DEFAULT 0,
+    InvoiceFooterNote    NVARCHAR(500) NULL,           -- نص أسفل الفاتورة
+    BaseCurrencyId       INT NULL REFERENCES Currencies(CurrencyId),
+    -- إعدادات عامة إضافية:
+    CostingMethod        TINYINT NOT NULL DEFAULT 1,   -- 1= آخر سعر شراء, 2= متوسط التكلفة
+    DefaultPurchaseCurrencyId INT NULL REFERENCES Currencies(CurrencyId),
+    DefaultSalesCurrencyId    INT NULL REFERENCES Currencies(CurrencyId),
+    DefaultVoucherCurrencyId  INT NULL REFERENCES Currencies(CurrencyId),
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL
+);
+
+ممتاز، تم تثبيت كل القرارات. الآن أبدأ ببناء **Schema قاعدة البيانات الكاملة**.
+
+نظراً لضخامة النظام (محاسبة + مخزون + مبيعات/مشتريات + كاشير + رواتب + صلاحيات + تدقيق)، سأبنيه بأقسام منطقية متسلسلة حتى يسهل عليك المراجعة والتعقيب على كل قسم قبل الانتقال للتالي.
+
+## القسم 1: الإعدادات الأساسية والمرجعية (Setup/Reference Tables)
+
+```sql
+-- ==========================================
+-- 1. العملات
+-- ==========================================
+CREATE TABLE Currencies (
+    CurrencyId          INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(50)  NOT NULL,           -- ريال سعودي
+    Symbol               NVARCHAR(10)  NULL,                -- ر.س
+    FractionName         NVARCHAR(30)  NULL,                -- فلس / هللة
+    ExchangeRate         DECIMAL(18,6) NOT NULL DEFAULT 1,  -- التعادل
+    ConversionType       TINYINT       NOT NULL DEFAULT 1,  -- 1=ضرب, 2=قسمة
+    IsBaseCurrency       BIT           NOT NULL DEFAULT 0,  -- العملة الأساسية للنظام (لعرض التقارير الافتراضية)
+    IsActive             BIT           NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2     NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2     NULL,
+    IsDeleted            BIT           NOT NULL DEFAULT 0   -- Soft Delete لدعم "سلة المحذوفات"
+);
+
+-- ==========================================
+-- 2. الفروع
+-- ==========================================
+CREATE TABLE Branches (
+    BranchId             INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 3. المراكز (مركز تكلفة/ربحية - Cost Centers)
+-- ==========================================
+CREATE TABLE Centers (
+    CenterId             INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    BranchId             INT NULL REFERENCES Branches(BranchId),
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 4. المستودعات
+-- ==========================================
+CREATE TABLE Warehouses (
+    WarehouseId          INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    BranchId             INT NULL REFERENCES Branches(BranchId),
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 5. الوحدات (وحدة أساسية عامة: حبة، كرتون، كيلو...)
+-- ==========================================
+CREATE TABLE Units (
+    UnitId               INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(50) NOT NULL,
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 6. الأقسام (تصنيف الأصناف)
+-- ==========================================
+CREATE TABLE Departments (
+    DepartmentId         INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    ColorHex             NVARCHAR(9)  NULL,          -- لون زر القسم بشاشة الكاشير (مثل #FFCC00)
+    DisplayOrder         INT NOT NULL DEFAULT 0,     -- توحيد تسلسل الأقسام بالكاشير
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 7. المواقع (موقع تخزين داخل المستودع - Bin Location)
+-- ==========================================
+CREATE TABLE StockLocations (
+    LocationId           INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,
+    WarehouseId          INT NULL REFERENCES Warehouses(WarehouseId),
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 8. معلومات الشركة/الفاتورة (سطر واحد فقط - Singleton)
+-- ==========================================
+CREATE TABLE CompanyInfo (
+    CompanyInfoId        INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(200) NOT NULL,
+    NameEn               NVARCHAR(200) NULL,
+    AddressAr            NVARCHAR(300) NULL,
+    AddressEn            NVARCHAR(300) NULL,
+    Phone                NVARCHAR(30)  NULL,
+    Mobile               NVARCHAR(30)  NULL,
+    LogoPath             NVARCHAR(300) NULL,
+    StampPath            NVARCHAR(300) NULL,          -- الختم
+    UseImageInsteadOfText BIT NOT NULL DEFAULT 0,
+    InvoiceFooterNote    NVARCHAR(500) NULL,           -- نص أسفل الفاتورة
+    BaseCurrencyId       INT NULL REFERENCES Currencies(CurrencyId),
+    -- إعدادات عامة إضافية:
+    CostingMethod        TINYINT NOT NULL DEFAULT 1,   -- 1= آخر سعر شراء, 2= متوسط التكلفة
+    DefaultPurchaseCurrencyId INT NULL REFERENCES Currencies(CurrencyId),
+    DefaultSalesCurrencyId    INT NULL REFERENCES Currencies(CurrencyId),
+    DefaultVoucherCurrencyId  INT NULL REFERENCES Currencies(CurrencyId),
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL
+);
+```
+
+القسم 2: شجرة الحسابات والقيود المحاسبية (Chart of Accounts & Journal)
+-- ==========================================
+-- 1. المجموعات العامة (تصنيف موازٍ: عملاء/موردون/صناديق/بنوك...)
+-- ==========================================
+CREATE TABLE AccountGeneralGroups (
+    GeneralGroupId       INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(100) NOT NULL,    -- الجميع، أصول ثابتة، صناديق، بنوك، عملاء، موردون...
+    SystemCode           NVARCHAR(30)  NULL,        -- كود ثابت داخلي (CASH, BANK, CUSTOMER, SUPPLIER...) يُستخدم بالكود لتمييزها برمجياً
+    IsActive             BIT NOT NULL DEFAULT 1,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 2. المجموعات الرئيسية (شجرة الترقيم العشري الهرمي)
+-- ==========================================
+CREATE TABLE AccountMainGroups (
+    MainGroupId          INT IDENTITY(1,1) PRIMARY KEY,
+    Code                 NVARCHAR(10)  NOT NULL UNIQUE,   -- '1','11','111','1211'...
+    NameAr               NVARCHAR(150) NOT NULL,
+    ParentMainGroupId    INT NULL REFERENCES AccountMainGroups(MainGroupId), -- هرمية شجرية حقيقية
+    ClosingReportType    TINYINT NULL,   -- 1=المتاجرة, 2=الأرباح والخسائر, 3=الميزانية العمومية, NULL=لا يظهر بحساب ختامي
+    Level                INT NOT NULL DEFAULT 1,          -- عمق الشجرة (1، 2، 3...) لتسهيل الفرز والعرض
+    IsActive             BIT NOT NULL DEFAULT 1,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 3. شجرة الحسابات (الحسابات التفصيلية الفعلية)
+-- ==========================================
+CREATE TABLE Accounts (
+    AccountId            INT IDENTITY(1,1) PRIMARY KEY,
+    AccountCode          NVARCHAR(20)  NOT NULL UNIQUE,  -- رقم الحساب (2111 مثلاً)
+    NameAr               NVARCHAR(200) NOT NULL,
+    MainGroupId          INT NOT NULL REFERENCES AccountMainGroups(MainGroupId),
+    GeneralGroupId       INT NULL REFERENCES AccountGeneralGroups(GeneralGroupId),
+    Nature               TINYINT NOT NULL,        -- 1=مدين, 2=دائن (طبيعة الحساب)
+    BranchId             INT NULL REFERENCES Branches(BranchId),   -- خاص بفرع (NULL = عام لكل الفروع)
+    CurrencyId           INT NOT NULL REFERENCES Currencies(CurrencyId),
+    -- بيانات اتصال (للعملاء/الموردين):
+    Phone                NVARCHAR(30)  NULL,
+    Mobile               NVARCHAR(30)  NULL,
+    Address              NVARCHAR(300) NULL,
+    Notes                NVARCHAR(500) NULL,
+    -- ضوابط:
+    CreditLimit          DECIMAL(18,2) NULL,       -- الحد الأعلى للدين (الحد الأعلى مسموح به)
+    OpeningBalance       DECIMAL(18,2) NOT NULL DEFAULT 0,
+    OpeningBalanceNature TINYINT NULL,             -- 1=مدين, 2=دائن (لحالة الرصيد الافتتاحي)
+    IsHidden             BIT NOT NULL DEFAULT 0,   -- إخفاء الحساب
+    IsSuspended          BIT NOT NULL DEFAULT 0,   -- إيقاف الحساب (منع الحركة عليه)
+    IsSystemAccount      BIT NOT NULL DEFAULT 0,   -- حساب نظامي (لا يُحذف، مثل "الصندوق العام")
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IX_Accounts_MainGroup ON Accounts(MainGroupId);
+CREATE INDEX IX_Accounts_GeneralGroup ON Accounts(GeneralGroupId);
+
+-- ==========================================
+-- 4. السنوات/الفترات المالية (لدعم "الإقفال السنوي")
+-- ==========================================
+CREATE TABLE FiscalPeriods (
+    FiscalPeriodId       INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr               NVARCHAR(50) NOT NULL,     -- "سنة 2026"
+    StartDate            DATE NOT NULL,
+    EndDate              DATE NOT NULL,
+    IsClosed             BIT NOT NULL DEFAULT 0,
+    ClosedAt             DATETIME2 NULL,
+    ClosedByUserId       INT NULL,                  -- FK لجدول Users (يُضاف لاحقاً بقسم الصلاحيات)
+    IsActive             BIT NOT NULL DEFAULT 1     -- الفترة الحالية المفتوحة للعمل
+);
+
+-- ==========================================
+-- 5. أنواع المستندات (Document Types) - جدول مرجعي موحّد
+-- بديل عن القائمة المنسدلة الهشة بالنظام القديم؛ يُستخدم بكل الجداول أدناه
+-- ==========================================
+CREATE TABLE DocumentTypes (
+    DocumentTypeId       INT IDENTITY(1,1) PRIMARY KEY,
+    Code                 NVARCHAR(30) NOT NULL UNIQUE,  -- SALES_CASH, SALES_CREDIT, SALES_RETURN_CASH, PURCHASE_CASH, PURCHASE_CREDIT,
+                                                          -- PURCHASE_RETURN_CASH, PURCHASE_RETURN_CREDIT, QUOTATION, PURCHASE_ORDER,
+                                                          -- CUSTOMS_CLEARANCE, STOCK_TRANSFER, STOCK_ISSUE, OPENING_BALANCE,
+                                                          -- STOCK_ADJUST_INCREASE, STOCK_ADJUST_DECREASE, RECEIPT_VOUCHER,
+                                                          -- PAYMENT_VOUCHER, JOURNAL_VOUCHER, JOURNAL_OPENING
+    NameAr               NVARCHAR(100) NOT NULL,
+    Category             TINYINT NOT NULL             -- 1=مستند تجاري (فاتورة/مردود/أمر), 2=سند مالي, 3=مستند مخزني
+);
+
+-- ==========================================
+-- 6. رأس القيد المحاسبي (Journal Header) - القلب النابض للنظام
+-- كل عملية مالية بالنظام (فاتورة، سند، تسوية) تُولّد سطراً هنا تلقائياً
+-- ==========================================
+CREATE TABLE JournalEntries (
+    JournalEntryId       BIGINT IDENTITY(1,1) PRIMARY KEY,
+    EntryNumber          INT NOT NULL,               -- رقم تسلسلي معروض للمستخدم (يُعاد الترقيم لكل سنة مالية)
+    FiscalPeriodId       INT NOT NULL REFERENCES FiscalPeriods(FiscalPeriodId),
+    EntryDate            DATE NOT NULL,
+    DocumentTypeId       INT NOT NULL REFERENCES DocumentTypes(DocumentTypeId),
+    SourceDocumentId     BIGINT NULL,                -- ربط بمصدر القيد (رقم الفاتورة/السند الذي ولّد هذا القيد) - Polymorphic
+    Description          NVARCHAR(500) NULL,         -- البيان العام للقيد
+    BranchId             INT NULL REFERENCES Branches(BranchId),
+    CenterId             INT NULL REFERENCES Centers(CenterId),
+    IsAutoGenerated       BIT NOT NULL DEFAULT 0,     -- مولّد تلقائياً من مستند، أم قيد يدوي مباشر
+    CreatedByUserId      INT NULL,                   -- FK لاحقاً
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IX_JournalEntries_Number ON JournalEntries(FiscalPeriodId, EntryNumber);
+
+-- ==========================================
+-- 7. تفاصيل القيد (Journal Lines) - سطور المدين/الدائن
+-- ==========================================
+CREATE TABLE JournalLines (
+    JournalLineId         BIGINT IDENTITY(1,1) PRIMARY KEY,
+    JournalEntryId        BIGINT NOT NULL REFERENCES JournalEntries(JournalEntryId),
+    LineNumber            INT NOT NULL,               -- ترتيب السطر داخل القيد
+    AccountId             INT NOT NULL REFERENCES Accounts(AccountId),
+    Description           NVARCHAR(300) NULL,         -- بيان خاص بالسطر (يطغى على البيان العام لو موجود)
+    CurrencyId            INT NOT NULL REFERENCES Currencies(CurrencyId),
+    ExchangeRate          DECIMAL(18,6) NOT NULL DEFAULT 1,  -- التعادل وقت تسجيل القيد (Snapshot - لا يتأثر بتغيّر السعر لاحقاً)
+    DebitAmount           DECIMAL(18,2) NOT NULL DEFAULT 0,
+    CreditAmount          DECIMAL(18,2) NOT NULL DEFAULT 0,
+    CenterId              INT NULL REFERENCES Centers(CenterId),
+    CONSTRAINT CK_JournalLines_DebitOrCredit CHECK (
+        (DebitAmount > 0 AND CreditAmount = 0) OR (CreditAmount > 0 AND DebitAmount = 0)
+    )
+);
+
+CREATE INDEX IX_JournalLines_Account ON JournalLines(AccountId);
+CREATE INDEX IX_JournalLines_Entry ON JournalLines(JournalEntryId);
+
+القسم 3: الأصناف والمخزون (Items, Units, Pricing, Stock)
+-- ==========================================
+-- 1. الأصناف (بيانات الصنف الأساسية)
+-- ==========================================
+CREATE TABLE Items (
+    ItemId               INT IDENTITY(1,1) PRIMARY KEY,
+    ItemCode             INT NOT NULL UNIQUE,          -- رقم تسلسلي تلقائي (وليس إدخال يدوي كما اتفقنا)
+    NameAr               NVARCHAR(200) NOT NULL,
+    Barcode              NVARCHAR(50)  NULL,            -- باركود الوحدة الأساسية (باركود إضافي لكل وحدة بجدول منفصل أدناه)
+    DepartmentId         INT NULL REFERENCES Departments(DepartmentId),
+    ModelNo              NVARCHAR(100) NULL,            -- موديل
+    LocationId           INT NULL REFERENCES StockLocations(LocationId),
+    ImagePath            NVARCHAR(300) NULL,
+    Specifications        NVARCHAR(1000) NULL,           -- المواصفات
+    -- خيارات سلوكية:
+    DecreaseQtyOnSale    BIT NOT NULL DEFAULT 1,        -- تناقص الكمية عند البيع (يُعطّل للخدمات مثلاً)
+    PrintInKitchen       BIT NOT NULL DEFAULT 0,        -- طباعة بالمطبخ (قطاع مطاعم)
+    -- الوحدات الافتراضية:
+    IssueUnitId          INT NULL REFERENCES Units(UnitId),   -- وحدة الصرف
+    ReceiveUnitId         INT NULL REFERENCES Units(UnitId),   -- وحدة التوريد
+    -- تتبع الصلاحية والكمية:
+    TrackExpiryDate      BIT NOT NULL DEFAULT 0,        -- اعتماد تاريخ الصلاحية
+    LowQtyAlertLevel     DECIMAL(18,3) NULL,            -- تنبيه نقص كمية
+    ExpiryAlertDays      INT NULL,                       -- تنبيه بفترة قبل الانتهاء (أيام)
+    IsComposite          BIT NOT NULL DEFAULT 0,        -- صنف مركّب (له مكوّنات - BOM)
+    IsActive             BIT NOT NULL DEFAULT 1,
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt           DATETIME2 NULL,
+    IsDeleted            BIT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IX_Items_Department ON Items(DepartmentId);
+CREATE INDEX IX_Items_Barcode ON Items(Barcode);
+CREATE INDEX IX_Items_NameAr ON Items(NameAr);   -- لدعم البحث السريع بالكتابة (Autocomplete)
+
+-- ==========================================
+-- 2. وحدات الصنف (تعدد الوحدات لكل صنف + معامل تحويل)
+-- ==========================================
+CREATE TABLE ItemUnits (
+    ItemUnitId           INT IDENTITY(1,1) PRIMARY KEY,
+    ItemId               INT NOT NULL REFERENCES Items(ItemId),
+    UnitId               INT NOT NULL REFERENCES Units(UnitId),
+    ConversionFactor     DECIMAL(18,4) NOT NULL DEFAULT 1,  -- كم يساوي بالوحدة الأساسية (كرتون = 24 حبة)
+    Barcode              NVARCHAR(50) NULL,                  -- باركود خاص بهذه الوحدة تحديداً
+    IsBaseUnit           BIT NOT NULL DEFAULT 0,
+    IsDeleted            BIT NOT NULL DEFAULT 0,
+    UNIQUE(ItemId, UnitId)
+);
+
+-- ==========================================
+-- 3. مكوّنات الصنف (BOM - للأصناف المركّبة/المصنّعة)
+-- ==========================================
+CREATE TABLE ItemComponents (
+    ItemComponentId       INT IDENTITY(1,1) PRIMARY KEY,
+    ParentItemId          INT NOT NULL REFERENCES Items(ItemId),      -- الصنف المركّب (النهائي)
+    ComponentItemId       INT NOT NULL REFERENCES Items(ItemId),      -- الصنف المكوّن (الفرعي)
+    UnitId                INT NOT NULL REFERENCES Units(UnitId),
+    Quantity              DECIMAL(18,4) NOT NULL,
+    IsDeleted             BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 4. شرائح التسعير (تعريف الشرائح: مستهلك/عميل/جملة/موزع/خاص)
+-- ==========================================
+CREATE TABLE PriceTiers (
+    PriceTierId           INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr                NVARCHAR(50) NOT NULL,     -- مستهلك، عميل، جملة، موزع، خاص
+    DisplayOrder          INT NOT NULL DEFAULT 0,
+    IsDeleted             BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 5. أسعار الأصناف (مصفوفة: صنف × شريحة تسعير × عملة)
+-- ==========================================
+CREATE TABLE ItemPrices (
+    ItemPriceId           INT IDENTITY(1,1) PRIMARY KEY,
+    ItemId                INT NOT NULL REFERENCES Items(ItemId),
+    PriceTierId           INT NOT NULL REFERENCES PriceTiers(PriceTierId),
+    CurrencyId            INT NOT NULL REFERENCES Currencies(CurrencyId),
+    SalePrice             DECIMAL(18,4) NOT NULL DEFAULT 0,
+    ModifiedAt            DATETIME2 NULL,
+    UNIQUE(ItemId, PriceTierId, CurrencyId)
+);
+
+-- ==========================================
+-- 6. إحصائيات الصنف التلقائية (Cache محسوبة - لتسريع العرض بدل حساب حي كل مرة)
+-- تُحدَّث تلقائياً بعد كل حركة عبر Trigger أو Application Service
+-- ==========================================
+CREATE TABLE ItemStatistics (
+    ItemId                INT PRIMARY KEY REFERENCES Items(ItemId),
+    LastPurchasePrice     DECIMAL(18,4) NULL,
+    LowestPurchasePrice   DECIMAL(18,4) NULL,
+    HighestPurchasePrice  DECIMAL(18,4) NULL,
+    LastSalePrice         DECIMAL(18,4) NULL,
+    LowestSalePrice       DECIMAL(18,4) NULL,
+    HighestSalePrice      DECIMAL(18,4) NULL,
+    LastPurchaseQty       DECIMAL(18,3) NULL,
+    LastSaleQty           DECIMAL(18,3) NULL,
+    AverageCost           DECIMAL(18,4) NULL,       -- لطريقة "متوسط التكلفة"
+    LastUpdated           DATETIME2 NULL
+);
+
+-- ==========================================
+-- 7. أرصدة المخزون الحية (Stock Balance) لكل صنف/مستودع/فرع
+-- ==========================================
+CREATE TABLE StockBalances (
+    StockBalanceId        BIGINT IDENTITY(1,1) PRIMARY KEY,
+    ItemId                INT NOT NULL REFERENCES Items(ItemId),
+    WarehouseId           INT NOT NULL REFERENCES Warehouses(WarehouseId),
+    BranchId              INT NULL REFERENCES Branches(BranchId),
+    Quantity              DECIMAL(18,3) NOT NULL DEFAULT 0,   -- بالوحدة الأساسية دوماً
+    ExpiryDate            DATE NULL,                            -- لدعم تتبع الصلاحية على مستوى الدفعة (Batch)
+    LastUpdated           DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    UNIQUE(ItemId, WarehouseId, ExpiryDate)
+);
+
+CREATE INDEX IX_StockBalances_Item ON StockBalances(ItemId);
+
+-- ==========================================
+-- 8. حركات المخزون (Stock Ledger) - سجل تاريخي كامل لكل دخول/خروج
+-- ==========================================
+CREATE TABLE StockMovements (
+    StockMovementId       BIGINT IDENTITY(1,1) PRIMARY KEY,
+    ItemId                INT NOT NULL REFERENCES Items(ItemId),
+    WarehouseId           INT NOT NULL REFERENCES Warehouses(WarehouseId),
+    MovementDate          DATE NOT NULL,
+    DocumentTypeId        INT NOT NULL REFERENCES DocumentTypes(DocumentTypeId),
+    SourceDocumentId      BIGINT NULL,             -- ربط بالفاتورة/التحويل المصدر (Polymorphic كما بالقيود)
+    Direction             TINYINT NOT NULL,        -- 1=وارد, 2=منصرف
+    Quantity              DECIMAL(18,3) NOT NULL,  -- بالوحدة الأساسية دوماً
+    UnitCost              DECIMAL(18,4) NULL,      -- تكلفة الوحدة وقت الحركة (Snapshot)
+    ExpiryDate            DATE NULL,
+    CreatedAt             DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    IsDeleted             BIT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IX_StockMovements_Item ON StockMovements(ItemId, MovementDate);
+
+القسم 4: المستندات التجارية الموحّدة + السندات المالية
+-- ==========================================
+-- 1. رأس المستند التجاري الموحّد (فاتورة بيع/شراء/مردود/عرض سعر/أمر شراء/تخليص/تحويل مخزني)
+-- شاشة واحدة، جدول واحد، DocumentTypeId يحدد السلوك
+-- ==========================================
+CREATE TABLE TradeDocuments (
+    TradeDocumentId       BIGINT IDENTITY(1,1) PRIMARY KEY,
+    DocumentNumber        INT NOT NULL,                -- رقم تسلسلي (يُعاد الترقيم لكل DocumentTypeId أو سنوياً - قرار قابل للتعديل)
+    DocumentTypeId        INT NOT NULL REFERENCES DocumentTypes(DocumentTypeId),
+    DocumentDate          DATE NOT NULL,
+    AccountId             INT NULL REFERENCES Accounts(AccountId),   -- العميل/المورد (حساب مرتبط)
+    -- بيانات مالية عامة:
+    CurrencyId            INT NOT NULL REFERENCES Currencies(CurrencyId),
+    ExchangeRate          DECIMAL(18,6) NOT NULL DEFAULT 1,
+    BranchId              INT NULL REFERENCES Branches(BranchId),
+    CenterId              INT NULL REFERENCES Centers(CenterId),
+    CashboxAccountId      INT NULL REFERENCES Accounts(AccountId),  -- الخزينة (لو نقدي)
+    PriceTierId           INT NULL REFERENCES PriceTiers(PriceTierId),  -- التسعيرة (بيع فقط)
+    -- إجماليات (Denormalized - محسوبة ومخزّنة لتسريع التقارير):
+    SubTotal              DECIMAL(18,2) NOT NULL DEFAULT 0,
+    DiscountValue         DECIMAL(18,2) NOT NULL DEFAULT 0,
+    DiscountIsPercent     BIT NOT NULL DEFAULT 0,
+    TaxValue              DECIMAL(18,2) NOT NULL DEFAULT 0,   -- الضريبة (الغرية)
+    NetTotal              DECIMAL(18,2) NOT NULL DEFAULT 0,
+    PaidAmount            DECIMAL(18,2) NOT NULL DEFAULT 0,   -- لدعم تسديد المردودات
+    -- حقول خاصة بفاتورة التخليص الجمركي (NULL لأي نوع آخر):
+    TransportMeansCount   INT NULL,             -- عدد وسائل النقل
+    LocomotiveNumber      NVARCHAR(50) NULL,     -- رقم القاطرة
+    CountryOfOrigin       NVARCHAR(100) NULL,    -- البلد
+    GoodsType             NVARCHAR(200) NULL,    -- نوع البضاعة
+    DeclarationType       TINYINT NULL,          -- 1=استيراد, 2=تصدير
+    -- حقول التحويل المخزني (NULL لأي نوع آخر):
+    FromWarehouseId       INT NULL REFERENCES Warehouses(WarehouseId),
+    ToWarehouseId         INT NULL REFERENCES Warehouses(WarehouseId),
+    -- حقول تسديد المردودات:
+    LastSettlementDate    DATE NULL,
+    LastSettlementAmount  DECIMAL(18,2) NULL,
+    LastSettlementCurrencyId INT NULL REFERENCES Currencies(CurrencyId),
+    -- ربط بمستند سابق (مردود يرتبط بفاتورة أصلية، أو أمر شراء يتحوّل لفاتورة):
+    ReferenceDocumentId   BIGINT NULL REFERENCES TradeDocuments(TradeDocumentId),
+    Notes                 NVARCHAR(500) NULL,
+    JournalEntryId        BIGINT NULL REFERENCES JournalEntries(JournalEntryId),  -- القيد المحاسبي المولّد تلقائياً
+    Status                TINYINT NOT NULL DEFAULT 1,  -- 1=محفوظة, 2=ملغاة (بدل حذف فعلي لمستند مالي)
+    CreatedByUserId       INT NULL,
+    CreatedAt             DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    ModifiedAt            DATETIME2 NULL,
+    IsDeleted             BIT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IX_TradeDocuments_Number ON TradeDocuments(DocumentTypeId, DocumentNumber);
+CREATE INDEX IX_TradeDocuments_Account ON TradeDocuments(AccountId);
+CREATE INDEX IX_TradeDocuments_Date ON TradeDocuments(DocumentDate);
+
+-- ==========================================
+-- 2. تفاصيل سطور المستند (جدول الأصناف بالفاتورة)
+-- ==========================================
+CREATE TABLE TradeDocumentLines (
+    TradeDocumentLineId    BIGINT IDENTITY(1,1) PRIMARY KEY,
+    TradeDocumentId        BIGINT NOT NULL REFERENCES TradeDocuments(TradeDocumentId),
+    LineNumber             INT NOT NULL,
+    ItemId                 INT NOT NULL REFERENCES Items(ItemId),
+    UnitId                 INT NOT NULL REFERENCES Units(UnitId),
+    WarehouseId            INT NOT NULL REFERENCES Warehouses(WarehouseId),
+    Quantity               DECIMAL(18,3) NOT NULL,
+    UnitPrice              DECIMAL(18,4) NOT NULL,
+    DiscountValue          DECIMAL(18,2) NOT NULL DEFAULT 0,
+    DiscountIsPercent      BIT NOT NULL DEFAULT 0,
+    NetUnitPrice           DECIMAL(18,4) NOT NULL,     -- صافي السعر بعد الخصم
+    LineTotal              DECIMAL(18,2) NOT NULL,
+    IsFreeQty              BIT NOT NULL DEFAULT 0,     -- كمية مجانية
+    ExpiryDate             DATE NULL,
+    CostAtTime             DECIMAL(18,4) NULL,         -- تكلفة الصنف وقت البيع (لحساب الربح لاحقاً بدقة)
+    IsDeleted              BIT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IX_TradeDocumentLines_Doc ON TradeDocumentLines(TradeDocumentId);
+CREATE INDEX IX_TradeDocumentLines_Item ON TradeDocumentLines(ItemId);
+
+-- ==========================================
+-- 3. الحسابات الإضافية على الفاتورة (نافذة "إعدادة الحسابات المضافة")
+-- ==========================================
+CREATE TABLE TradeDocumentExtraCharges (
+    ExtraChargeId          BIGINT IDENTITY(1,1) PRIMARY KEY,
+    TradeDocumentId        BIGINT NOT NULL REFERENCES TradeDocuments(TradeDocumentId),
+    AccountId              INT NOT NULL REFERENCES Accounts(AccountId),   -- مثال: حساب "شحن"، "تأمين"
+    Amount                 DECIMAL(18,2) NOT NULL,
+    IsAddition             BIT NOT NULL DEFAULT 1     -- 1=إضافة على الفاتورة, 0=خصم
+);
+
+-- ==========================================
+-- 4. الكوبونات
+-- ==========================================
+CREATE TABLE Coupons (
+    CouponId               INT IDENTITY(1,1) PRIMARY KEY,
+    Code                   NVARCHAR(50) NOT NULL UNIQUE,
+    DiscountValue          DECIMAL(18,2) NOT NULL,
+    IsPercent              BIT NOT NULL DEFAULT 0,
+    ExpiryDate             DATE NULL,
+    MinInvoiceAmount       DECIMAL(18,2) NULL,
+    MaxUsageCount          INT NULL,
+    CurrentUsageCount      INT NOT NULL DEFAULT 0,
+    IsActive               BIT NOT NULL DEFAULT 1,
+    IsDeleted              BIT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE TradeDocumentCoupons (      -- ربط كوبون مستخدم بفاتورة معينة
+    TradeDocumentId        BIGINT NOT NULL REFERENCES TradeDocuments(TradeDocumentId),
+    CouponId               INT NOT NULL REFERENCES Coupons(CouponId),
+    DiscountApplied        DECIMAL(18,2) NOT NULL,
+    PRIMARY KEY (TradeDocumentId, CouponId)
+);
+
+-- ==========================================
+-- 5. السندات المالية (قبض/صرف) - نموذج مبسّط منفصل عن TradeDocuments
+-- ==========================================
+CREATE TABLE CashVouchers (
+    CashVoucherId           BIGINT IDENTITY(1,1) PRIMARY KEY,
+    VoucherNumber           INT NOT NULL,
+    VoucherTypeId           INT NOT NULL REFERENCES DocumentTypes(DocumentTypeId),  -- RECEIPT_VOUCHER أو PAYMENT_VOUCHER
+    VoucherDate             DATE NOT NULL,
+    AccountId               INT NOT NULL REFERENCES Accounts(AccountId),    -- الحساب المقابل (العميل/المورد/المصروف)
+    CashboxAccountId        INT NOT NULL REFERENCES Accounts(AccountId),    -- حساب الصندوق/البنك
+    CurrencyId              INT NOT NULL REFERENCES Currencies(CurrencyId),
+    ExchangeRate            DECIMAL(18,6) NOT NULL DEFAULT 1,
+    Amount                  DECIMAL(18,2) NOT NULL,
+    Reference               NVARCHAR(100) NULL,       -- المرجع
+    Description             NVARCHAR(500) NULL,       -- البيان
+    BranchId                INT NULL REFERENCES Branches(BranchId),
+    CenterId                INT NULL REFERENCES Centers(CenterId),
+    ShowBalanceOnVoucher    BIT NOT NULL DEFAULT 0,    -- إظهار رصيد في السند
+    JournalEntryId          BIGINT NULL REFERENCES JournalEntries(JournalEntryId),
+    Status                  TINYINT NOT NULL DEFAULT 1,
+    CreatedByUserId         INT NULL,
+    CreatedAt               DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    IsDeleted               BIT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IX_CashVouchers_Number ON CashVouchers(VoucherTypeId, VoucherNumber);
+
+-- ==========================================
+-- 6. إقفال الصناديق (تسوية الجرد النقدي اليومي)
+-- ==========================================
+CREATE TABLE CashDrawerClosings (
+    CashDrawerClosingId     BIGINT IDENTITY(1,1) PRIMARY KEY,
+    CashboxAccountId        INT NOT NULL REFERENCES Accounts(AccountId),
+    ClosingDate             DATE NOT NULL,
+    SystemBalance           DECIMAL(18,2) NOT NULL,     -- الرصيد حسب النظام
+    ActualBalance           DECIMAL(18,2) NOT NULL,     -- المبلغ الفعلي المُدخل
+    Difference              DECIMAL(18,2) NOT NULL,     -- الفرق
+    Notes                   NVARCHAR(500) NULL,
+    ClosedByUserId          INT NULL,
+    CreatedAt               DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+);
+
+القسم 5: المستخدمون، الصلاحيات الشجرية، سجل التدقيق، الرواتب
+-- ==========================================
+-- 1. المستخدمون
+-- ==========================================
+CREATE TABLE Users (
+    UserId                 INT IDENTITY(1,1) PRIMARY KEY,
+    UserName               NVARCHAR(50) NOT NULL UNIQUE,
+    PasswordHash           NVARCHAR(300) NOT NULL,     -- Hash (BCrypt/PBKDF2) وليس نص عادي كما بالنظام القديم على الأرجح
+    BranchId               INT NULL REFERENCES Branches(BranchId),
+    CenterId               INT NULL REFERENCES Centers(CenterId),
+    LinkedAccountId        INT NULL REFERENCES Accounts(AccountId),   -- الحساب المرتبط (مثال: admin → الصندوق العام)
+    IsCashierAccount       BIT NOT NULL DEFAULT 0,     -- حساب كاشير؟
+    IsActive               BIT NOT NULL DEFAULT 1,
+    LastLoginAt            DATETIME2 NULL,
+    CreatedAt              DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    IsDeleted              BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 2. الصلاحيات (تعريف شجري - جدول واحد لكل الصلاحيات الممكنة بالنظام)
+-- ==========================================
+CREATE TABLE Permissions (
+    PermissionId           INT IDENTITY(1,1) PRIMARY KEY,
+    Code                   NVARCHAR(100) NOT NULL UNIQUE,  -- 'SALES_INVOICE', 'SALES_INVOICE.VIEW', 'SALES_INVOICE.ADD'...
+    NameAr                 NVARCHAR(150) NOT NULL,
+    ParentPermissionId     INT NULL REFERENCES Permissions(PermissionId),  -- الهرمية (فاتورة بيع → عرض/إضافة/تعديل/حذف)
+    Module                 NVARCHAR(50) NOT NULL,      -- تصنيف عام: Sales, Purchases, Accounting, Inventory, HR, Settings...
+    DisplayOrder           INT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 3. صلاحيات المستخدم (Many-to-Many)
+-- ==========================================
+CREATE TABLE UserPermissions (
+    UserId                 INT NOT NULL REFERENCES Users(UserId),
+    PermissionId           INT NOT NULL REFERENCES Permissions(PermissionId),
+    GrantedAt              DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    GrantedByUserId        INT NULL REFERENCES Users(UserId),
+    PRIMARY KEY (UserId, PermissionId)
+);
+
+-- ==========================================
+-- 4. الأدوار (Roles) - إضافة تحسينية عن النظام القديم
+-- بدل تعيين كل صلاحية يدوياً لكل مستخدم جديد، يمكن تعريف "دور" جاهز (كاشير، محاسب، مدير فرع) وتعيينه دفعة واحدة
+-- ==========================================
+CREATE TABLE Roles (
+    RoleId                 INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr                 NVARCHAR(100) NOT NULL,     -- كاشير، محاسب، مدير فرع، مدير عام
+    IsSystemRole           BIT NOT NULL DEFAULT 0,     -- أدوار جاهزة لا تُحذف
+    IsDeleted              BIT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE RolePermissions (
+    RoleId                 INT NOT NULL REFERENCES Roles(RoleId),
+    PermissionId           INT NOT NULL REFERENCES Permissions(PermissionId),
+    PRIMARY KEY (RoleId, PermissionId)
+);
+
+CREATE TABLE UserRoles (
+    UserId                 INT NOT NULL REFERENCES Users(UserId),
+    RoleId                 INT NOT NULL REFERENCES Roles(RoleId),
+    PRIMARY KEY (UserId, RoleId)
+);
+
+-- ==========================================
+-- 5. سجل التدقيق (Audit Log) - يسجل كل حركة بدقة كما بالنظام القديم
+-- ==========================================
+CREATE TABLE AuditLogs (
+    AuditLogId             BIGINT IDENTITY(1,1) PRIMARY KEY,
+    UserId                 INT NULL REFERENCES Users(UserId),
+    ActionDate             DATE NOT NULL,
+    ActionTime             TIME NOT NULL,
+    DocumentTypeCode       NVARCHAR(50) NULL,          -- نوع المستند/النافذة
+    OperationType          NVARCHAR(30) NOT NULL,      -- عرض / إضافة / تعديل / حذف
+    WindowName             NVARCHAR(100) NULL,          -- اسم النافذة
+    ComputerName           NVARCHAR(100) NULL,          -- بصمة الجهاز
+    Details                NVARCHAR(1000) NULL,
+    RecordId               BIGINT NULL,                 -- معرف السجل المتأثر (Polymorphic)
+    CreatedAt              DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+);
+
+CREATE INDEX IX_AuditLogs_User ON AuditLogs(UserId, ActionDate);
+CREATE INDEX IX_AuditLogs_Date ON AuditLogs(ActionDate);
+
+-- ==========================================
+-- 6. سلة المحذوفات (Recycle Bin) - أرشيف مركزي قابل للاسترجاع
+-- بديل أنظف من Soft Delete المبعثر بكل جدول لتوفير شاشة "إدارة المحذوفات" الموحّدة
+-- ==========================================
+CREATE TABLE DeletedItemsArchive (
+    ArchiveId              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    EntityType             NVARCHAR(50) NOT NULL,       -- 'Account','Item','User','Branch'...
+    EntityId               BIGINT NOT NULL,
+    EntitySnapshotJson     NVARCHAR(MAX) NOT NULL,       -- نسخة كاملة من السجل بصيغة JSON وقت الحذف (للاسترجاع الكامل)
+    DeletedByUserId        INT NULL REFERENCES Users(UserId),
+    DeletedAt              DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    IsRestored             BIT NOT NULL DEFAULT 0,
+    RestoredAt             DATETIME2 NULL
+);
+
+-- ==========================================
+-- 7. الموظفون (منفصل عن Users - موظف قد لا يكون له دخول للنظام)
+-- ==========================================
+CREATE TABLE Employees (
+    EmployeeId             INT IDENTITY(1,1) PRIMARY KEY,
+    NameAr                 NVARCHAR(150) NOT NULL,
+    LinkedUserId           INT NULL REFERENCES Users(UserId),   -- ربط اختياري بحساب مستخدم بالنظام
+    LinkedAccountId        INT NULL REFERENCES Accounts(AccountId),  -- الحساب المحاسبي للموظف (لتتبع السلف والذمم)
+    BasicSalary            DECIMAL(18,2) NOT NULL DEFAULT 0,
+    MaxAllowedAdvance      DECIMAL(18,2) NULL,          -- الحد الأعلى المسموح للسحب
+    CurrencyId             INT NOT NULL REFERENCES Currencies(CurrencyId),
+    IsActive               BIT NOT NULL DEFAULT 1,
+    IsDeleted              BIT NOT NULL DEFAULT 0
+);
+
+-- ==========================================
+-- 8. حركات الرواتب الشهرية (راتب/خصميات/سحبيات/غياب لكل شهر)
+-- ==========================================
+CREATE TABLE PayrollEntries (
+    PayrollEntryId         BIGINT IDENTITY(1,1) PRIMARY KEY,
+    EmployeeId             INT NOT NULL REFERENCES Employees(EmployeeId),
+    PeriodMonth            INT NOT NULL,        -- 1-12
+    PeriodYear             INT NOT NULL,
+    BasicSalary            DECIMAL(18,2) NOT NULL,
+    Deductions             DECIMAL(18,2) NOT NULL DEFAULT 0,    -- الخصميات
+    Advances               DECIMAL(18,2) NOT NULL DEFAULT 0,    -- السحبيات
+    AbsenceDays            DECIMAL(5,2) NOT NULL DEFAULT 0,     -- أيام الغياب
+    NetSalary              DECIMAL(18,2) NOT NULL,
+    JournalEntryId         BIGINT NULL REFERENCES JournalEntries(JournalEntryId),
+    IsPaid                 BIT NOT NULL DEFAULT 0,
+    PaidAt                 DATETIME2 NULL,
+    CreatedAt              DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    UNIQUE(EmployeeId, PeriodMonth, PeriodYear)
+);
+
+القسم 6: الكاشير/POS — التفاصيل البرمجية
+
+1. لماذا الكاشير يحتاج معمارية مختلفة قليلاً عن باقي الشاشات؟
+
+الكاشير له طبيعة خاصة: يعمل باللمس، يحتاج استجابة فورية (لا تأخير شبكة محسوس)، ويدعم فواتير متعددة متوازية (1-4 كما رأينا بالصورة) — أي الكاشير يمكنه "تعليق" فاتورة والبدء بأخرى ثم العودة للأولى.
+
+2. الكيان الإضافي: جلسة كاشير معلّقة (Held Orders)
+
+-- جدول إضافي خاص بالكاشير فقط (لا يؤثر على TradeDocuments حتى تُرحَّل الفاتورة نهائياً)
+CREATE TABLE POSHeldOrders (
+    HeldOrderId          INT IDENTITY(1,1) PRIMARY KEY,
+    SlotNumber           TINYINT NOT NULL,        -- 1, 2, 3, 4 (الفواتير المتوازية بالشاشة)
+    UserId               INT NOT NULL REFERENCES Users(UserId),
+    CashboxAccountId     INT NULL REFERENCES Accounts(AccountId),
+    PriceTierId          INT NULL REFERENCES PriceTiers(PriceTierId),
+    CreatedAt            DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    UNIQUE(SlotNumber, UserId)   -- كل مستخدم كاشير له 4 خانات مستقلة به فقط
+);
+
+CREATE TABLE POSHeldOrderLines (
+    HeldOrderLineId       INT IDENTITY(1,1) PRIMARY KEY,
+    HeldOrderId           INT NOT NULL REFERENCES POSHeldOrders(HeldOrderId),
+    ItemId                INT NOT NULL REFERENCES Items(ItemId),
+    UnitId                INT NOT NULL REFERENCES Units(UnitId),
+    Quantity              DECIMAL(18,3) NOT NULL,
+    UnitPrice             DECIMAL(18,4) NOT NULL
+);
+
+لاحظ: هذا منفصل تماماً عن TradeDocuments — فاتورة الكاشير المعلّقة ليست "فاتورة رسمية" بعد، فقط مسودة عمل. فقط عندما يضغط الكاشير "دفع/إنهاء"، تُحوَّل لسطر حقيقي بجدول TradeDocuments عبر نفس TradeDocumentService الذي بنيناه مسبقاً — إعادة استخدام كاملة للمنطق الموجود، الكاشير مجرد "واجهة سريعة" فوق نفس الخدمة.
+
+3. ViewModel الكاشير (المنطق الأساسي)
+
+// HisabTak.WPF/ViewModels/POS/CashierViewModel.cs
+public partial class CashierViewModel : ObservableObject
+{
+    private readonly ITradeDocumentService _documentService;
+    private readonly IPOSHeldOrderService _heldOrderService;
+    private readonly IItemSearchService _itemSearch;
+
+    [ObservableProperty] private int activeSlot = 1;   // الفاتورة النشطة حالياً (1-4)
+    [ObservableProperty] private ObservableCollection<CartLineDto> cartLines = new();
+    [ObservableProperty] private ObservableCollection<DepartmentButtonDto> departmentButtons = new();
+    [ObservableProperty] private decimal totalAmount;
+
+    // عند الضغط على زر صنف ملوّن بالشاشة
+    [RelayCommand]
+    private void AddItemToCart(ItemButtonDto item)
+    {
+        var existingLine = CartLines.FirstOrDefault(l => l.ItemId == item.ItemId);
+        if (existingLine != null)
+            existingLine.Quantity += 1;      // لو موجود، زد الكمية فقط
+        else
+            CartLines.Add(new CartLineDto { ItemId = item.ItemId, Quantity = 1, UnitPrice = item.CurrentPrice });
+
+        RecalculateTotal();
+        // حفظ فوري بجدول POSHeldOrderLines (كل ضغطة تُحفظ تلقائياً، لمنع فقدان البيانات لو انقطعت الكهرباء)
+        _ = _heldOrderService.SaveDraftLineAsync(ActiveSlot, existingLine ?? CartLines.Last());
+    }
+
+    // التبديل بين الفواتير الأربع المتوازية
+    [RelayCommand]
+    private async Task SwitchSlotAsync(int slotNumber)
+    {
+        ActiveSlot = slotNumber;
+        var savedOrder = await _heldOrderService.GetHeldOrderAsync(slotNumber);
+        CartLines = new ObservableCollection<CartLineDto>(savedOrder?.Lines ?? new());
+        RecalculateTotal();
+    }
+
+    // إتمام الدفع — هنا يحدث الربط الحقيقي بالنظام الأساسي
+    [RelayCommand]
+    private async Task CheckoutAsync(string paymentType)   // "cash" أو "credit"
+    {
+        var dto = new CreateTradeDocumentDto
+        {
+            DocumentTypeCode = paymentType == "cash" ? "SALES_CASH" : "SALES_CREDIT",
+            Lines = CartLines.Select(l => new TradeDocumentLineDto { /* ... */ }).ToList()
+        };
+
+        // نفس الخدمة المستخدمة بفاتورة البيع العادية — لا كود مكرر إطلاقاً
+        var documentId = await _documentService.SaveInvoiceAsync(dto);
+
+        await _heldOrderService.ClearSlotAsync(ActiveSlot);   // تفريغ الخانة بعد إتمام البيع
+        CartLines.Clear();
+
+        // طباعة الفاتورة فوراً (تفصيلها بالقسم القادم)
+        await _printService.PrintReceiptAsync(documentId, isSmallFormat: true);
+    }
+}
+
+4. البحث السريع بالكاشير (أزرار الأصناف الملوّنة + دعم الباركود)
+
+public interface IItemSearchService
+{
+    // للبحث بالكتابة (فاتورة عادية) — أول حرفين تكفي
+    Task<List<ItemSearchResultDto>> SearchByNameAsync(string partialName, int maxResults = 20);
+
+    // لشاشة الكاشير: تحميل كل أصناف قسم معيّن كأزرار ملوّنة دفعة واحدة
+    Task<List<ItemButtonDto>> GetItemsByDepartmentAsync(int departmentId);
+
+    // لقارئ الباركود (فوري بدون تأخير)
+    Task<ItemSearchResultDto?> FindByBarcodeAsync(string barcode);
+}
+
+5. دعم قطاع المطاعم (طباعة المطبخ)
+
+// عند الـ Checkout، لو فيه أصناف PrintInKitchen = true، تُطبع تذكرة منفصلة للمطبخ تلقائياً
+private async Task PrintKitchenTicketIfNeededAsync(List<CartLineDto> lines)
+{
+    var kitchenItems = lines.Where(l => l.PrintInKitchen).ToList();
+    if (kitchenItems.Any())
+        await _printService.PrintKitchenTicketAsync(kitchenItems);   // طابعة مطبخ منفصلة عن طابعة الفاتورة
+}
+
+القسم 7: النسخ الاحتياطي والاستعادة المحلية
+
+بما أن النظام Local بالكامل بدون سحابة، هذه الخدمة حرجة جداً — فقدان قاعدة البيانات المحلية بدون نسخة احتياطية يعني فقدان كل بيانات العميل المالية نهائياً.
+
+1. آلية النسخ الاحتياطي (SQL Server Native Backup)
+
+// HisabTak.Infrastructure/Backup/BackupService.cs
+public class BackupService : IBackupService
+{
+    private readonly string _connectionString;
+
+    public async Task<string> CreateBackupAsync(string backupFolderPath)
+    {
+        var dbName = GetDatabaseNameFromConnectionString(_connectionString);
+        var fileName = $"{dbName}_{DateTime.Now:yyyyMMdd_HHmmss}.bak";
+        var fullPath = Path.Combine(backupFolderPath, fileName);
+
+        var sql = $@"BACKUP DATABASE [{dbName}] 
+                     TO DISK = @BackupPath 
+                     WITH FORMAT, INIT, NAME = 'HisabTak Full Backup';";
+
+        using var connection = new SqlConnection(_connectionString);
+        await connection.ExecuteAsync(sql, new { BackupPath = fullPath });
+
+        return fullPath;
+    }
+
+    public async Task RestoreBackupAsync(string backupFilePath)
+    {
+        var dbName = GetDatabaseNameFromConnectionString(_connectionString);
+
+        // يجب قطع كل الاتصالات النشطة بقاعدة البيانات أولاً قبل الاستعادة
+        var killConnectionsSql = $@"
+            ALTER DATABASE [{dbName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;";
+
+        var restoreSql = $@"
+            RESTORE DATABASE [{dbName}] FROM DISK = @BackupPath WITH REPLACE;
+            ALTER DATABASE [{dbName}] SET MULTI_USER;";
+
+        using var connection = new SqlConnection("Server=.;Database=master;Trusted_Connection=True;");
+        await connection.ExecuteAsync(killConnectionsSql);
+        await connection.ExecuteAsync(restoreSql, new { BackupPath = backupFilePath });
+    }
+}
+
+2. النسخ التلقائي المجدول (كما رأينا بالنظام القديم: "3 مسارات + تلقائي")
+
+// HisabTak.WPF/Services/ScheduledBackupService.cs — يعمل بالخلفية طوال فترة تشغيل التطبيق
+public class ScheduledBackupService : BackgroundService
+{
+    private readonly IBackupService _backupService;
+    private readonly ISystemSettingsService _settings;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var settings = await _settings.GetBackupSettingsAsync();
+
+            if (settings.AutoBackupEnabled && DateTime.Now.TimeOfDay >= settings.ScheduledBackupTime)
+            {
+                foreach (var path in settings.BackupPaths)  // يدعم 3 مسارات كالنظام القديم (فلاشة + قرص محلي + مجلد شبكة)
+                {
+                    try { await _backupService.CreateBackupAsync(path); }
+                    catch (Exception ex) { _logger.LogError(ex, $"فشل النسخ الاحتياطي بالمسار: {path}"); }
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);  // فحص كل ساعة
+        }
+    }
+}
+
+3. تحسين إضافي عن النظام القديم: تنبيه صريح لو النسخ الاحتياطي فشل أو لم يُنفَّذ منذ فترة
+
+public async Task<BackupHealthStatus> CheckBackupHealthAsync()
+{
+    var lastBackup = await _settings.GetLastSuccessfulBackupDateAsync();
+    var daysSinceBackup = (DateTime.Now - lastBackup).TotalDays;
+
+    return daysSinceBackup switch
+    {
+        > 7  => BackupHealthStatus.Critical,   // تحذير أحمر بالواجهة الرئيسية
+        > 3  => BackupHealthStatus.Warning,     // تحذير أصفر
+        _    => BackupHealthStatus.Healthy
+    };
+}
+
+هذا يعالج نقطة ضعف واقعية جداً بأنظمة Local: العميل قد ينسى أو يتجاهل النسخ الاحتياطي لأشهر دون أن يدري، فيُفاجأ بكارثة عند أول عطل بالجهاز. تنبيه صريح بالشاشة الرئيسية ("لم يتم نسخ احتياطي منذ 10 أيام!") يحل هذه المشكلة استباقياً.
+
+القسم 8: الطباعة (فواتير وتقارير عبر QuestPDF)
+
+1. لماذا QuestPDF تحديداً (بدل iTextSharp القديم)؟
+مجاني بالكامل لأي استخدام تجاري (iTextSharp الحديث يتطلب ترخيصاً تجارياً مدفوعاً لأي استخدام غير مفتوح المصدر)
+بناء القوالب بكود C# نظيف (Fluent API) بدل XML/RDLC المعقّد
+2. نموذج قالب فاتورة (يدعم صيغتين: كبيرة/صغيرة كما بالنظام القديم)
+
+// HisabTak.Infrastructure/Printing/Templates/InvoiceDocument.cs
+public class InvoiceDocument : IDocument
+{
+    private readonly TradeDocumentPrintDto _invoice;
+    private readonly bool _isSmallFormat;   // فاتورة كاشير صغيرة (80mm) أم فاتورة عادية A4
+
+    public InvoiceDocument(TradeDocumentPrintDto invoice, bool isSmallFormat)
+    {
+        _invoice = invoice;
+        _isSmallFormat = isSmallFormat;
+    }
+
+    public void Compose(IDocumentContainer container)
+    {
+        container.Page(page =>
+        {
+            page.Size(_isSmallFormat ? PageSizes.A6 : PageSizes.A4);
+            page.Margin(1, Unit.Centimetre);
+
+            page.Header().Element(ComposeHeader);
+            page.Content().Element(ComposeContent);
+            page.Footer().Element(ComposeFooter);
+        });
+    }
+
+    private void ComposeHeader(IContainer container)
+    {
+        container.Row(row =>
+        {
+            row.RelativeItem().Column(col =>
+            {
+                col.Item().Text(_invoice.CompanyInfo.NameAr).FontSize(16).Bold();
+                col.Item().Text(_invoice.CompanyInfo.AddressAr);
+                col.Item().Text($"هاتف: {_invoice.CompanyInfo.Phone}");
+            });
+
+            if (!string.IsNullOrEmpty(_invoice.CompanyInfo.LogoPath))
+                row.ConstantItem(80).Image(_invoice.CompanyInfo.LogoPath);
+        });
+    }
+
+    private void ComposeContent(IContainer container)
+    {
+        container.Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                columns.RelativeColumn(3);  // الصنف
+                columns.RelativeColumn(1);  // الوحدة
+                columns.RelativeColumn(1);  // الكمية
+                columns.RelativeColumn(1);  // السعر
+                columns.RelativeColumn(1);  // الإجمالي
+            });
+
+            table.Header(header =>
+            {
+                header.Cell().Text("الصنف").Bold();
+                header.Cell().Text("الوحدة").Bold();
+                header.Cell().Text("الكمية").Bold();
+                header.Cell().Text("السعر").Bold();
+                header.Cell().Text("الإجمالي").Bold();
+            });
+
+            foreach (var line in _invoice.Lines)
+            {
+                table.Cell().Text(line.ItemName);
+                table.Cell().Text(line.UnitName);
+                table.Cell().Text(line.Quantity.ToString("N2"));
+                table.Cell().Text(line.UnitPrice.ToString("N2"));
+                table.Cell().Text(line.LineTotal.ToString("N2"));
+            }
+        });
+    }
+
+    private void ComposeFooter(IContainer container)
+    {
+        container.Column(col =>
+        {
+            col.Item().AlignRight().Text($"الإجمالي: {_invoice.NetTotal:N2} {_invoice.CurrencyName}").Bold();
+            if (!string.IsNullOrEmpty(_invoice.CompanyInfo.FooterNote))
+                col.Item().AlignCenter().Text(_invoice.CompanyInfo.FooterNote).FontSize(9);
+        });
+    }
+}
+
+3. خدمة الطباعة (تُستدعى من الكاشير كما رأينا أعلاه)
+
+public class PrintService : IPrintService
+{
+    public async Task PrintReceiptAsync(long documentId, bool isSmallFormat)
+    {
+        var invoiceDto = await _tradeDocumentService.GetForPrintAsync(documentId);
+        var document = new InvoiceDocument(invoiceDto, isSmallFormat);
+
+        document.GeneratePdf($"invoice_{documentId}.pdf");
+        // أو للطباعة المباشرة بدون معاينة (Direct Print) بطابعة حرارية:
+        PrintPdfDirectly($"invoice_{documentId}.pdf", printerName: _settings.SmallInvoicePrinterName);
+    }
+}
+
+4. تقارير الحساب الختامي (نفس المبدأ، قالب مختلف)
+
+public class TradingAccountReportDocument : IDocument
+{
+    private readonly TradingAccountDto _data;
+    // Compose() يبني الجدول بنفس أسلوب البيانات اللي رأيناها بصور "الأرصدة الافتتاحية" و"الحساب الختامي" الأصلية
+}
+
+القسم 9: استيراد/تصدير Excel
+
+1. تصدير الأصناف لملف Excel (ClosedXML)
+
+public class ExcelExportService : IExcelExportService
+{
+    public byte[] ExportItemsToExcel(List<ItemDto> items)
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.Worksheets.Add("الأصناف");
+
+        // الرأس
+        sheet.Cell(1, 1).Value = "رقم الصنف";
+        sheet.Cell(1, 2).Value = "الاسم";
+        sheet.Cell(1, 3).Value = "الباركود";
+        sheet.Cell(1, 4).Value = "القسم";
+        sheet.Cell(1, 5).Value = "سعر البيع";
+        sheet.Range(1, 1, 1, 5).Style.Font.Bold = true;
+
+        int row = 2;
+        foreach (var item in items)
+        {
+            sheet.Cell(row, 1).Value = item.ItemCode;
+            sheet.Cell(row, 2).Value = item.NameAr;
+            sheet.Cell(row, 3).Value = item.Barcode;
+            sheet.Cell(row, 4).Value = item.DepartmentName;
+            sheet.Cell(row, 5).Value = item.SalePrice;
+            row++;
+        }
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+}
+
+2. الاستيراد (مع خيارات النظام القديم: تنبيه بتكرار الاسم، إضافة للرصيد الافتتاحي)
+
+public class ExcelImportService : IExcelImportService
+{
+    public async Task<ImportResultDto> ImportItemsFromExcelAsync(Stream fileStream, ImportOptionsDto options)
+    {
+        using var workbook = new XLWorkbook(fileStream);
+        var sheet = workbook.Worksheet(1);
+        var result = new ImportResultDto();
+
+        foreach (var row in sheet.RowsUsed().Skip(1))   // تخطي صف الرأس
+        {
+            var itemName = row.Cell(2).GetString();
+
+            // خيار "تنبيه بتكرار الاسم" من النظام القديم
+            if (options.WarnOnDuplicateName && await _itemService.ExistsByNameAsync(itemName))
+            {
+                result.Warnings.Add($"الصنف '{itemName}' موجود مسبقاً بالسطر {row.RowNumber()}");
+                if (!options.OverwriteDuplicates) continue;
+            }
+
+            var newItem = await _itemService.CreateItemAsync(new CreateItemDto
+            {
+                NameAr = itemName,
+                Barcode = row.Cell(3).GetString(),
+                SalePrice = row.Cell(5).GetValue<decimal>()
+            });
+
+            // خيار "إضافة الأصناف للرصيد الافتتاحي" من النظام القديم
+            if (options.AddToOpeningBalance)
+            {
+                await _stockService.CreateOpeningBalanceEntryAsync(newItem.ItemId, row.Cell(6).GetValue<decimal>());
+            }
+
+            result.SuccessCount++;
+        }
+
+        return result;
+    }
+}
+
+القسم 10: استراتيجية الاختبار (أمثلة Unit Tests فعلية)
+
+هذا هو الضمان الحقيقي الأقرب لطلبك بـ"صفر أخطاء" — اختبارات آلية تُشغَّل تلقائياً وتمنع أي خطأ من الوصول للإنتاج:
+
+// HisabTak.Domain.Tests/Accounting/JournalEntryTests.cs
+public class JournalEntryTests
+{
+    [Fact]
+    public void ValidateBalance_ThrowsException_WhenDebitNotEqualCredit()
+    {
+        // Arrange: قيد غير متوازن عمداً
+        var entry = JournalEntry.Create(DateTime.Now, 1, null, "اختبار");
+        entry.AddLine(JournalLine.Create(accountId: 1, debit: 100, credit: 0, currencyId: 1, exchangeRate: 1));
+        entry.AddLine(JournalLine.Create(accountId: 2, debit: 0, credit: 90, currencyId: 1, exchangeRate: 1));  // فرق 10
+
+        // Act & Assert: يجب أن يرمي استثناءً وجوباً
+        Assert.Throws<UnbalancedJournalEntryException>(() => entry.ValidateBalance());
+    }
+
+    [Fact]
+    public void ValidateBalance_Succeeds_WhenDebitEqualsCredit()
+    {
+        var entry = JournalEntry.Create(DateTime.Now, 1, null, "اختبار");
+        entry.AddLine(JournalLine.Create(1, 100, 0, 1, 1));
+        entry.AddLine(JournalLine.Create(2, 0, 100, 1, 1));
+
+        var exception = Record.Exception(() => entry.ValidateBalance());
+        Assert.Null(exception);   // لا استثناء = القيد متوازن بنجاح
+    }
+}
+
+// HisabTak.Domain.Tests/Inventory/StockBalanceTests.cs
+public class StockBalanceTests
+{
+    [Fact]
+    public void AdjustQuantity_ThrowsException_WhenResultingInNegativeStock()
+    {
+        var balance = StockBalance.Create(itemId: 1, warehouseId: 1, initialQty: 10);
+
+        Assert.Throws<InsufficientStockException>(() => balance.AdjustQuantity(-15, allowNegative: false));
+    }
+
+    [Fact]
+    public void AdjustQuantity_Succeeds_WhenAllowNegativeIsTrue()
+    {
+        var balance = StockBalance.Create(itemId: 1, warehouseId: 1, initialQty: 10);
+        balance.AdjustQuantity(-15, allowNegative: true);   // بعض المحلات تسمح ببيع سالب مؤقتاً
+
+        Assert.Equal(-5, balance.Quantity);
+    }
+}
+
+// HisabTak.Application.Tests/Accounting/SalesCashPostingStrategyTests.cs
+public class SalesCashPostingStrategyTests
+{
+    [Fact]
+    public async Task BuildJournalEntry_CreatesBalancedEntry_ForCashSale()
+    {
+        // Arrange: Mock للاعتماديات
+        var mockAccountLookup = new Mock<IAccountLookupService>();
+        mockAccountLookup.Setup(x => x.GetSalesRevenueAccountAsync()).ReturnsAsync(100);
+
+        var strategy = new SalesCashPostingStrategy(mockAccountLookup.Object);
+        var invoice = TradeDocument.CreateForTest(netTotal: 500, cashboxAccountId: 50);
+
+        // Act
+        var journalEntry = await strategy.BuildJournalEntryAsync(invoice);
+
+        // Assert
+        Assert.Equal(500, journalEntry.Lines.Sum(l => l.DebitAmount));
+        Assert.Equal(500, journalEntry.Lines.Sum(l => l.CreditAmount));   // يؤكد التوازن تلقائياً
+        Assert.Contains(journalEntry.Lines, l => l.AccountId == 50 && l.DebitAmount == 500);  // الصندوق مدين
+        Assert.Contains(journalEntry.Lines, l => l.AccountId == 100 && l.CreditAmount == 500); // المبيعات دائن
+    }
+}
+
+هذه الاختبارات تُشغَّل تلقائياً بكل مرة تُعدّل بها الكود (CI/CD) — فلو مبرمج مستقبلي (أو حتى أنت لاحقاً) غيّر شيئاً بالخطأ وكسر منطق توازن القيود، الاختبار يفشل فوراً قبل وصول الخطأ لأي عميل حقيقي. هذا أقرب ما يمكن تحقيقه فعلياً لـ"ثقة عالية جداً بعدم وجود أخطاء" في نظام محاسبي.
+
+
+
+بما أن النظام Local بالكامل بدون سحابة، هذه الخدمة حرجة جداً — فقدان قاعدة البيانات المحلية بدون نسخة احتياطية يعني فقدان كل بيانات العميل المالية نهائياً.
+1. آلية النسخ الاحتياطي (SQL Server Native Backup)
+هل تقصد انه بيكون نسخ احتياطي محلي local  لنظام اذا كنت تقصد هاذا فالافضل انه يكون هناك مكان مخصص او زر لنسخص الاحتياطي ويكون اختياري للعميل سوا يريد استخدامه بشكل يومي او شهري او سنوي او الفتره الذي يريدها بشكل اختياري له كعميل 
+
+القسم 10: استراتيجية الاختبار (أمثلة Unit Tests فعلية)
+هذا هو الضمان الحقيقي الأقرب لطلبك بـ"صفر أخطاء" — اختبارات آلية تُشغَّل تلقائياً وتمنع أي خطأ من الوصول للإنتاج:
+
+هذه الاختبارات تُشغَّل تلقائياً بكل مرة تُعدّل بها الكود (CI/CD) — فلو مبرمج مستقبلي (أو حتى أنت لاحقاً) غيّر شيئاً بالخطأ وكسر منطق توازن القيود، الاختبار يفشل فوراً قبل وصول الخطأ لأي عميل حقيقي. هذا أقرب ما يمكن تحقيقه فعلياً لـ"ثقة عالية جداً بعدم وجود أخطاء" في نظام محاسبي.
+وضح لي بشكل بسيط ومفهوم ومثال عملي بسيط النقطه دي حتا افهما جيدا
+
+أداة "القالب الجاهز" — كيف تعمل عملياً خطوة بخطوة؟
+
+1. تُعِدّ مرة واحدة فقط قاعدة بيانات اسمها `HisabTak_Template` تحتوي: شجرة حسابات كاملة قياسية، الوحدات الشائعة (حبة، كرتون، كيلو)، العملات الشائعة (ريال سعودي، ريال يمني، دولار)، شرائح التسعير الافتراضية (مستهلك/عميل/جملة/موزع/خاص)، الصلاحيات والأدوار الجاهزة (كاشير، محاسب، مدير) — بدون أي بيانات فعلية لعميل (لا فواتير، لا أصناف حقيقية)
+2. عندما تذهب لعميل جديد، تشغّل أداة صغيرة (Console App أو أداة WPF بسيطة منفصلة) تسألك: "اسم قاعدة البيانات الجديدة؟" (مثلاً `HisabTak_AlekhwaElectronics`)
+3. الأداة تنفّذ أمر SQL بسيط: `RESTORE DATABASE [الاسم الجديد] FROM DISK = 'HisabTak_Template.bak'`
+4. خلال ثوانٍ، عندك قاعدة بيانات جاهزة بكل الإعدادات الأساسية، فقط تُدخل بيانات الشركة (الاسم، الشعار، الفروع) وتبدأ العميل بالعمل فوراً
+
+هل هذا مناسب لك أم يحتاج تعديل؟ مثلاً هل تريد أن تكون الأداة تفاعلية بواجهة رسومية بسيطة، أم مجرد سكربت/ملف batch تشغّله يدوياً بدون واجهة (أبسط وأسرع تنفيذاً)؟
+الان ممكن ان تسخدم  سكربت/ملف batch تشغّله يدوياً بدون واجهة (أبسط وأسرع تنفيذاً)؟
+ولاكن ممكن ان نغير هاذا ممكن اذا انتهينا من النظام بالكامل ممكن انفكر في حل اخر وهو واجهة رسومية بسيطة ولاكن الان اجعله سكربت/ملف batch تشغّله يدوياً بدون واجهة (أبسط وأسرع تنفيذاً)؟
+
+
+أداة "الدعم الفني عن بعد" — كيف تعمل عملياً؟
+هذه أبسط بكثير مما تبدو: ليست أداة معقدة خاصة، بل فقط تستخدم أدوات موجودة بالفعل:
+
+* لو عندك اتصال VPN أو TeamViewer/AnyDesk بجهاز العميل، تفتح SQL Server Management Studio (SSMS) مباشرة وتتصل بقاعدة بياناته المحلية عبر الشبكة، وتفحص المشكلة مباشرة بنفس أدوات SQL Server القياسية
+* لا تحتاج بناء أي أداة إضافية خاصة بك — هذا فقط استخدام لأدوات SQL Server وبرامج الدعم عن بعد الجاهزة أصلاً
+
+سؤالي لك: هل كنت تتخيل شيئاً أكثر تعقيداً من هذا (مثل أداة مخصصة ببرنامجك أنت لتشخيص الأعطال تلقائياً)، أم هذا المستوى البسيط (SSMS + برنامج دعم عن بعد عادي) كافٍ لاحتياجك؟
+لانريد دعم فني عن بعد بشكل اطلاقي وانما دعم فني بشكل تقليدي في حاله انه حدث شي في اظام او واجهه اي مشكله ممكن يتواصل معنا ونأتي اليه بشكل تقليدي وطبيعي 
+ممكن مستقبلا نعمل الشيء هاذا اذا امككننا ولاكن الان لانريد هاذا اطلاقا
+
+
+جيد، هذه القرارات كانت محفوظة مسبقاً بالفعل. الآن دعني أشرح لك النقطة التي طلبت توضيحها بمثال عملي بسيط جداً.
+
+توضيح Unit Tests بمثال عملي واحد بسيط
+
+تخيّل الموقف التالي بدون اختبارات، ثم معها:
+
+بدون Unit Tests (الخطر الحقيقي)
+
+تخيّل بعد سنة من الآن، تطلب من مبرمج (أو تعدّل أنت بنفسك) كود "فاتورة البيع النقدي" لإضافة ميزة جديدة بسيطة (مثلاً: خصم إضافي). أثناء التعديل، بالخطأ (بدون قصد) يحذف سطر كود كان يضيف "المبلغ للصندوق" بالقيد المحاسبي.
+
+النتيجة: الفاتورة تُحفظ بنجاح، تظهر بالتقارير، لكن الصندوق لا يزيد فعلياً! هذا خطأ صامت وخطير جداً بنظام محاسبي — لن تكتشفه إلا بعد أسابيع حين تلاحظ أن أرصدة الصناديق لا تتطابق مع الواقع، وبحلول ذلك الوقت قد تكون مئات الفواتير الخاطئة قد سُجّلت.
+
+مع Unit Tests (الحل)
+
+أنت (أو أي مبرمج) كتبت مسبقاً اختبار بسيط جداً يقول:
+
+"لو أنشأت فاتورة بيع نقدي بقيمة 500 ريال، يجب أن يكون بالقيد الناتج سطر واحد يزيد الصندوق بـ 500 بالضبط، وسطر آخر يزيد المبيعات بـ 500 بالضبط."
+
+الآن، بعد أي تعديل بالكود (سواء اليوم أو بعد 5 سنوات)، قبل أن يُنشر البرنامج للعميل، يُشغَّل هذا الاختبار تلقائياً خلال أقل من ثانية. لو الكود المعدَّل حذف سطر "زيادة الصندوق" بالخطأ، الاختبار يفشل فوراً ويظهر لك رسالة حمراء واضحة:
+
+❌ FAILED: BuildJournalEntry_CreatesBalancedEntry_ForCashSale
+   Expected: الصندوق = 500
+   Actual: الصندوق = 0
+
+
+فتكتشف الخطأ قبل أن يصل لأي عميل حقيقي إطلاقاً، وتصلحه فوراً وأنت لا زلت تعمل على نفس السطر بالضبط. هذا الفرق الجوهري: اكتشاف الخطأ خلال ثانية أثناء البرمجة، بدل اكتشافه بعد أسابيع من الاستخدام الفعلي بأموال حقيقية.
+
+خلاصة بسيطة: Unit Tests = حراس آليون صغار، كل واحد منهم يراقب "قاعدة" واحدة بسيطة (مثل: "القيد يجب أن يكون متوازناً دائماً")، ويصرخ فوراً لو أي تعديل مستقبلي كسر هذه القاعدة، بدلاً من انتظار اكتشافها يدوياً بالصدفة.
+
+تسجيل باقي القرارات وتأكيدها
+
+كل قراراتك (النسخ الاحتياطي المحلي الاختياري، سكربت Batch للقالب الجاهز، ورفض الدعم عن بعد حالياً) محفوظة بالفعل بذاكرتي بدقة. الآن أعتبر التحليل والتصميم الكامل منتهياً بالكامل بكل الأقسام العشرة.
+
+
+
+
