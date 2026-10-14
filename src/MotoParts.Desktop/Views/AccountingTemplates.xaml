@@ -1,0 +1,262 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:pages="clr-namespace:MotoParts.Desktop.Views.Pages"
+                    xmlns:forms="clr-namespace:MotoParts.Desktop.Views.Forms"
+                    xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/MotoParts;component/Themes/Theme.xaml" />
+        <ResourceDictionary Source="/MotoParts;component/Themes/Converters.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- ===================== Journal ===================== -->
+    <DataTemplate DataType="{x:Type pages:JournalViewModel}">
+        <DockPanel Margin="24,16">
+            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                <controls:DateRangeBar Margin="0,0,16,6" />
+                <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="220" Margin="0,0,10,6" ToolTip="رقم القيد أو البيان" />
+                <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}" Width="160" Margin="0,0,0,6" />
+            </WrapPanel>
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                <Button Content="عرض القيد" Command="{Binding ViewCommand}" Margin="0,0,8,0" />
+                <Button Content="قيد يدوي جديد" Style="{StaticResource PrimaryButton}" Command="{Binding NewEntryCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanPostManual, Converter={StaticResource Visible}}" />
+                <Button Content="عكس القيد" Command="{Binding ReverseCommand}"
+                        Visibility="{Binding CanReverse, Converter={StaticResource Visible}}" />
+                <TextBlock Text="القيود الناتجة عن الفواتير والسندات تُصحَّح من مستنداتها (استرجاع أو إلغاء سند)." Style="{StaticResource Muted}"
+                           VerticalAlignment="Center" Margin="14,0,0,0" />
+            </StackPanel>
+            <controls:StatusBanner DockPanel.Dock="Top" />
+            <DataGrid ItemsSource="{Binding Entries}" SelectedItem="{Binding Selected}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="رقم القيد" Binding="{Binding EntryNumber}" Width="130" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="التاريخ" Binding="{Binding EntryDate, Converter={StaticResource Date}}" Width="100" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="البيان" Binding="{Binding Memo}" Width="*" />
+                    <DataGridTextColumn Header="المصدر" Binding="{Binding Source, Converter={StaticResource Arabic}}" Width="120" />
+                    <DataGridTextColumn Header="المبلغ" Binding="{Binding TotalDebit, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTextColumn Header="عُكس بالقيد" Binding="{Binding ReversedByNumber}" Width="130" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="بواسطة" Binding="{Binding CreatedByName}" Width="130" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type forms:EntryDetailsForm}">
+        <StackPanel>
+            <TextBlock Margin="0,0,0,10">
+                <Run Text="{Binding Entry.EntryDate, Converter={StaticResource Date}, Mode=OneWay}" FontWeight="SemiBold" />
+                —
+                <Run Text="{Binding Entry.Memo, Mode=OneWay}" />
+                —
+                <Run Text="{Binding Entry.Source, Converter={StaticResource Arabic}, Mode=OneWay}" Foreground="{StaticResource TextMuted}" />
+            </TextBlock>
+            <DataGrid ItemsSource="{Binding Lines}" MaxHeight="420">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="#" Binding="{Binding LineNumber}" Width="40" />
+                    <DataGridTextColumn Header="الرمز" Binding="{Binding AccountCode}" Width="70" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="الحساب" Binding="{Binding AccountName}" Width="*" />
+                    <DataGridTextColumn Header="مدين" Binding="{Binding Debit, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTextColumn Header="دائن" Binding="{Binding Credit, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTextColumn Header="البيان" Binding="{Binding Memo}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Margin="0,10,0,0" FontWeight="SemiBold">
+                الإجمالي: مدين <Run Text="{Binding Entry.TotalDebit, Converter={StaticResource Money}, Mode=OneWay}" /> — دائن <Run Text="{Binding Entry.TotalCredit, Converter={StaticResource Money}, Mode=OneWay}" />
+            </TextBlock>
+        </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type forms:ManualEntryForm}">
+        <StackPanel>
+            <Grid Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="160" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="التاريخ" Style="{StaticResource FieldLabel}" />
+                    <DatePicker SelectedDate="{Binding EntryDate}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="البيان *" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding Memo}" />
+                </StackPanel>
+            </Grid>
+            <CheckBox Content="هذا قيد رصيد افتتاحي (عند بدء استخدام النظام)" IsChecked="{Binding IsOpeningBalance}" Margin="0,0,0,10" />
+            <DataGrid ItemsSource="{Binding Lines}" IsReadOnly="False" Height="300" RowHeight="40">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="الحساب" Width="2*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding DataContext.Accounts, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                          SelectedItem="{Binding Account, UpdateSourceTrigger=PropertyChanged}" DisplayMemberPath="Label"
+                                          IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Label" Margin="2" MinHeight="32" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="مدين" Binding="{Binding DebitText, UpdateSourceTrigger=PropertyChanged}" Width="120" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTextColumn Header="دائن" Binding="{Binding CreditText, UpdateSourceTrigger=PropertyChanged}" Width="120" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTextColumn Header="بيان السطر" Binding="{Binding Memo, UpdateSourceTrigger=PropertyChanged}" Width="*" />
+                    <DataGridTemplateColumn Width="44">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource LinkButton}" Padding="4" ToolTip="حذف السطر"
+                                        Command="{Binding DataContext.RemoveLineCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" CommandParameter="{Binding}">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" Foreground="{StaticResource Danger}" FontSize="14" />
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+            <DockPanel Margin="0,10,0,0">
+                <Button DockPanel.Dock="Right" Content="سطر جديد" Command="{Binding AddLineCommand}" />
+                <Border CornerRadius="5" Padding="12,8">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{StaticResource WarningSoft}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsBalanced}" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource SuccessSoft}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock FontWeight="SemiBold">
+                        مدين <Run Text="{Binding TotalDebit, Converter={StaticResource Money}, Mode=OneWay}" />
+                        — دائن <Run Text="{Binding TotalCredit, Converter={StaticResource Money}, Mode=OneWay}" />
+                        — الفرق <Run Text="{Binding Difference, Converter={StaticResource Money}, Mode=OneWay}" />
+                    </TextBlock>
+                </Border>
+            </DockPanel>
+        </StackPanel>
+    </DataTemplate>
+
+    <!-- ===================== Chart of accounts ===================== -->
+    <DataTemplate DataType="{x:Type pages:AccountsViewModel}">
+        <DockPanel Margin="24,16">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                <Button Content="حساب جديد" Style="{StaticResource PrimaryButton}" Command="{Binding AddCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="تعديل" Command="{Binding EditCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="حذف" Command="{Binding DeleteCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="دفتر الأستاذ (PDF)" Command="{Binding LedgerCommand}" />
+            </StackPanel>
+            <controls:StatusBanner DockPanel.Dock="Top" />
+            <DataGrid ItemsSource="{Binding Accounts}" SelectedItem="{Binding Selected}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="الرمز" Binding="{Binding Code}" Width="80" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*" />
+                    <DataGridTextColumn Header="النوع" Binding="{Binding Type, Converter={StaticResource Arabic}}" Width="110" />
+                    <DataGridTextColumn Header="الطبيعة" Binding="{Binding NormalBalance, Converter={StaticResource Arabic}}" Width="80" />
+                    <DataGridTextColumn Header="الأب" Binding="{Binding ParentCode}" Width="70" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="الرصيد" Binding="{Binding Balance, Converter={StaticResource Money}}" Width="130" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTextColumn Header="نظامي" Binding="{Binding IsSystem, Converter={StaticResource YesNo}}" Width="70" />
+                    <DataGridTextColumn Header="نشط" Binding="{Binding IsActive, Converter={StaticResource YesNo}}" Width="60" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type forms:AccountForm}">
+        <StackPanel>
+            <Border Style="{StaticResource Banner}" Margin="0,0,0,12" Visibility="{Binding IsSystem, Converter={StaticResource Visible}}">
+                <TextBlock TextWrapping="Wrap" Text="حساب نظامي يستخدمه البرنامج تلقائياً: يمكن تعديل اسمه ووصفه فقط." />
+            </Border>
+            <Grid Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="الرمز *" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding Code}" FlowDirection="LeftToRight" IsReadOnly="{Binding IsSystem}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="اسم الحساب *" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding Name}" />
+                </StackPanel>
+            </Grid>
+            <Grid Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="النوع" Style="{StaticResource FieldLabel}" />
+                    <ComboBox ItemsSource="{Binding Types}" SelectedItem="{Binding Type}" IsEnabled="{Binding IsSystem, Converter={StaticResource InvertBool}}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="الحساب الأب (اختياري)" Style="{StaticResource FieldLabel}" />
+                    <ComboBox ItemsSource="{Binding Parents}" SelectedItem="{Binding Parent}" />
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="الوصف" Style="{StaticResource FieldLabel}" />
+            <TextBox Text="{Binding Description}" Margin="0,0,0,10" />
+            <CheckBox Content="حساب نشط" IsChecked="{Binding IsActive}" IsEnabled="{Binding IsSystem, Converter={StaticResource InvertBool}}" />
+        </StackPanel>
+    </DataTemplate>
+
+    <!-- ===================== Fiscal periods ===================== -->
+    <DataTemplate DataType="{x:Type pages:FiscalPeriodsViewModel}">
+        <DockPanel Margin="24,16">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                <Button Content="إنشاء فترات سنة" Command="{Binding GenerateYearCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="إقفال الفترة" Style="{StaticResource PrimaryButton}" Command="{Binding LockCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanLock, Converter={StaticResource Visible}}" />
+                <Button Content="إعادة فتح" Style="{StaticResource DangerButton}" Command="{Binding UnlockCommand}"
+                        Visibility="{Binding CanUnlock, Converter={StaticResource Visible}}" />
+            </StackPanel>
+            <Border DockPanel.Dock="Top" Style="{StaticResource Banner}" Margin="0,0,0,10">
+                <TextBlock TextWrapping="Wrap"
+                           Text="إقفال الشهر بعد مراجعته يمنع أي تعديل على أرقامه نهائياً: لا بيع ولا شراء ولا قيود بتاريخ داخل الفترة. إعادة الفتح ممكنة للمالك مع ذكر السبب، وتُسجَّل في سجل التدقيق." />
+            </Border>
+            <controls:StatusBanner DockPanel.Dock="Top" />
+            <DataGrid ItemsSource="{Binding Periods}" SelectedItem="{Binding Selected}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="الفترة" Binding="{Binding Name}" Width="110" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="من" Binding="{Binding StartDate, Converter={StaticResource Date}}" Width="110" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="إلى" Binding="{Binding EndDate, Converter={StaticResource Date}}" Width="110" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTemplateColumn Header="الحالة" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border>
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource Badge}">
+                                            <Setter Property="Background" Value="{StaticResource SuccessSoft}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource DangerSoft}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock FontSize="12.5">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="مفتوحة" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                                        <Setter Property="Text" Value="مقفلة" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="تاريخ الإقفال" Binding="{Binding LockedAt, Converter={StaticResource Date}}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                    <DataGridTextColumn Header="ملاحظة" Binding="{Binding LockNote}" Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </DockPanel>
+    </DataTemplate>
+</ResourceDictionary>

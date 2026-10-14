@@ -1,0 +1,131 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <UserControl.Resources>
+        <Style x:Key="TileValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FlowDirection" Value="LeftToRight" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="0,6,0,0" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20">
+            <controls:StatusBanner />
+
+            <DockPanel Margin="0,0,0,16">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="تحديث" Command="{Binding RefreshCommand}" Margin="0,0,8,0" />
+                    <Button Content="نقطة البيع (F2)" Style="{StaticResource PrimaryButton}" Command="{Binding GoToPosCommand}"
+                            Visibility="{Binding CanSell, Converter={StaticResource Visible}}" />
+                </StackPanel>
+                <TextBlock Text="{Binding Greeting}" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
+
+            <!-- Today -->
+            <UniformGrid Columns="4" Margin="-6,0">
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="مبيعات اليوم" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.Today.NetTakings, Converter={StaticResource Money}}" Style="{StaticResource TileValue}" />
+                        <TextBlock Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0">
+                            <Run Text="{Binding Data.Today.InvoiceCount, Mode=OneWay}" /> فاتورة، بعد المرتجعات
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="ربح اليوم (قبل المصروفات)" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.Today.GrossProfit, Converter={StaticResource Money}}" Style="{StaticResource TileValue}" />
+                        <TextBlock Text="الإيراد بدون الضريبة ناقص تكلفة البضاعة" Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="المتوقع في درجك" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.MyDrawer.Expected, Converter={StaticResource Money}, FallbackValue=—, TargetNullValue=—}" Style="{StaticResource TileValue}" />
+                        <Button Content="إدارة ورديتي" Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Padding="0,4" Command="{Binding GoToShiftCommand}" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="أصناف تحتاج إعادة طلب" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.LowStockCount}" Style="{StaticResource TileValue}" Foreground="{StaticResource Warning}" />
+                        <TextBlock Style="{StaticResource Muted}" FontSize="12" Margin="0,4,0,0">
+                            منها <Run Text="{Binding Data.OutOfStockCount, Mode=OneWay}" /> نفدت كميتها
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Owner figures -->
+            <UniformGrid Columns="4" Margin="-6,6,-6,0" Visibility="{Binding SeesAll, Converter={StaticResource Visible}}">
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="مستحق على العملاء" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.Receivables, Converter={StaticResource Money}}" Style="{StaticResource TileValue}" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="مستحق للموردين" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.Payables, Converter={StaticResource Money}}" Style="{StaticResource TileValue}" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="ورديات مفتوحة الآن" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.OpenTills}" Style="{StaticResource TileValue}" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Margin="6">
+                    <StackPanel>
+                        <TextBlock Text="فروقات صندوق (آخر 30 يوماً)" Style="{StaticResource Muted}" />
+                        <TextBlock Text="{Binding Data.RecentCashDifferences}" Style="{StaticResource TileValue}" Foreground="{StaticResource Danger}" />
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Integrity -->
+            <Border Margin="0,16,0,0" Padding="14,12" CornerRadius="6" Visibility="{Binding CanSeeIntegrity, Converter={StaticResource Visible}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource SuccessSoft}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IntegrityOk}" Value="False">
+                                <Setter Property="Background" Value="{StaticResource DangerSoft}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <DockPanel>
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE9D5;" Margin="0,0,10,0" />
+                    <TextBlock Text="{Binding IntegrityText}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                </DockPanel>
+            </Border>
+
+            <!-- Low stock -->
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0" Visibility="{Binding HasLowStock, Converter={StaticResource Visible}}">
+                <StackPanel>
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="كل الأصناف" Style="{StaticResource LinkButton}" Command="{Binding GoToProductsCommand}" />
+                        <TextBlock Text="أصناف تحتاج إعادة طلب" Style="{StaticResource SectionTitle}" />
+                    </DockPanel>
+                    <DataGrid ItemsSource="{Binding LowStock}" MaxHeight="340">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="الرمز" Binding="{Binding Sku}" Width="110" />
+                            <DataGridTextColumn Header="الصنف" Binding="{Binding Name}" Width="*" />
+                            <DataGridTextColumn Header="التوافق" Binding="{Binding FitsModels}" Width="*" />
+                            <DataGridTextColumn Header="المتوفر" Binding="{Binding StockQty, Converter={StaticResource Qty}}" Width="90" ElementStyle="{StaticResource AmountCellBold}" />
+                            <DataGridTextColumn Header="حد الطلب" Binding="{Binding ReorderLevel, Converter={StaticResource Qty}}" Width="90" ElementStyle="{StaticResource AmountCell}" />
+                            <DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" Width="80" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

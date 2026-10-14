@@ -1,0 +1,34 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.StockMovementsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <DockPanel Margin="24,16">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <controls:DateRangeBar Margin="0,0,16,6" />
+            <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="220" Margin="0,0,10,6" ToolTip="رمز الصنف أو اسمه أو الملاحظة" />
+            <ComboBox ItemsSource="{Binding Types}" SelectedItem="{Binding Type}" Width="150" Margin="0,0,0,6" />
+        </WrapPanel>
+        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="0,0,0,8" TextWrapping="Wrap"
+                   Text="سجل كل قطعة دخلت أو خرجت. لا يُعدَّل ولا يُحذف؛ أي تصحيح يكون بحركة تسوية جديدة." />
+        <controls:StatusBanner DockPanel.Dock="Top" />
+        <DataGrid ItemsSource="{Binding Movements}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="الوقت" Binding="{Binding CreatedAt, Converter={StaticResource Date}}" Width="135" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الرمز" Binding="{Binding Sku}" Width="95" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الصنف" Binding="{Binding ProductName}" Width="*" />
+                <DataGridTextColumn Header="النوع" Binding="{Binding Type, Converter={StaticResource Arabic}}" Width="100" />
+                <DataGridTemplateColumn Header="الكمية" Width="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Quantity, Converter={StaticResource Qty}}" Style="{StaticResource AmountCellBold}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="الرصيد بعدها" Binding="{Binding BalanceAfter, Converter={StaticResource Qty}}" Width="95" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn x:Name="ValueColumn" Header="القيمة" Binding="{Binding ValueChange, Converter={StaticResource Money}}" Width="95" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="ملاحظات" Binding="{Binding Notes}" Width="*" />
+                <DataGridTextColumn Header="بواسطة" Binding="{Binding UserName}" Width="120" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

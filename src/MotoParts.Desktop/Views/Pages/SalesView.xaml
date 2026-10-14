@@ -1,0 +1,52 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.SalesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <DockPanel Margin="24,16">
+        <!-- Filters -->
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <controls:DateRangeBar Margin="0,0,16,6" />
+            <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="220" Margin="0,0,10,6"
+                     ToolTip="رقم الفاتورة أو اسم العميل" />
+            <ComboBox ItemsSource="{Binding PaymentFilters}" SelectedItem="{Binding PaymentFilter}" Width="150" Margin="0,0,10,6" />
+            <ComboBox ItemsSource="{Binding Employees}" SelectedItem="{Binding Employee}" Width="170" Margin="0,0,10,6"
+                      Visibility="{Binding SeesEveryone, Converter={StaticResource Visible}}" />
+        </WrapPanel>
+
+        <!-- Actions -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal">
+                <Button Content="تفاصيل الفاتورة" Command="{Binding ViewDetailsCommand}" Margin="0,0,8,0" />
+                <Button Content="طباعة A4" Command="{Binding PrintA4Command}" Margin="0,0,8,0" />
+                <Button Content="إيصال 80مم" Command="{Binding PrintReceiptCommand}" Margin="0,0,8,0" />
+                <Button Content="استرجاع" Style="{StaticResource DangerButton}" Command="{Binding RefundCommand}"
+                        Visibility="{Binding CanRefund, Converter={StaticResource Visible}}" />
+            </StackPanel>
+        </DockPanel>
+
+        <controls:StatusBanner DockPanel.Dock="Top" />
+
+        <DataGrid ItemsSource="{Binding Sales}" SelectedItem="{Binding Selected}" MouseDoubleClick="OnDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="رقم الفاتورة" Binding="{Binding InvoiceNumber}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="التاريخ والوقت" Binding="{Binding SoldAt, Converter={StaticResource Date}}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="العميل" Binding="{Binding CustomerName, TargetNullValue=نقدي}" Width="*" />
+                <DataGridTextColumn Header="البائع" Binding="{Binding SellerName}" Width="140" />
+                <DataGridTextColumn Header="الأصناف" Binding="{Binding ItemCount}" Width="70" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+                <DataGridTextColumn Header="الدفع" Binding="{Binding PaymentMethod, Converter={StaticResource Arabic}}" Width="100" />
+                <DataGridTemplateColumn Header="الحالة" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource Badge}" Background="{Binding Status, Converter={StaticResource StatusBrush}}">
+                                <TextBlock Text="{Binding Status, Converter={StaticResource Arabic}}" FontSize="12.5" />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="المرتجع" Binding="{Binding RefundedTotal, Converter={StaticResource Money}}" Width="100" ElementStyle="{StaticResource AmountCell}" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

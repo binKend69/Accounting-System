@@ -1,0 +1,40 @@
+<Window x:Class="MotoParts.Desktop.Views.Popups.MessageDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        FlowDirection="RightToLeft"
+        Foreground="{StaticResource Text}"
+        FontFamily="{StaticResource UiFont}"
+        FontSize="14"
+        Background="{StaticResource Surface}"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        ShowInTaskbar="False"
+        MinWidth="380"
+        MaxWidth="560">
+    <Grid Margin="22,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock x:Name="Glyph" Style="{StaticResource Icon}" FontSize="26" Margin="0,2,14,0"
+                   VerticalAlignment="Top" Grid.RowSpan="2" />
+
+        <TextBlock x:Name="Heading" Grid.Column="1" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
+
+        <TextBlock x:Name="Body" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" LineHeight="22" />
+
+        <TextBox x:Name="Input" Grid.Row="1" Grid.Column="1" Visibility="Collapsed" Margin="0,30,0,0" MinWidth="360" />
+
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="Yes" Style="{StaticResource PrimaryButton}" IsDefault="True" MinWidth="96" Margin="0,0,8,0" Click="OnYes" />
+            <Button x:Name="No" IsCancel="True" MinWidth="96" Click="OnNo" />
+        </StackPanel>
+    </Grid>
+</Window>
