@@ -1,0 +1,111 @@
+# إعداد SQL Server وإدارة قاعدة الفرع — P03
+
+الحالة: الكود قابل للبناء، لكن اختبار SQL الفعلي **محجوب** في الجلسة الحالية بسبب نطاق تنزيل الصورة. راجع [تقرير P03](database-status.md) قبل اعتماد أي وظيفة قاعدة بيانات.
+
+## حدود القاعدة والتصميم
+
+اعتمد المستخدم قاعدة مستقلة لكل تاجر ولكل فرع. لكل قاعدة اتصال صريح وشركة واحدة وفرع محلي واحد؛ لا CompanyId مشترك لعزل التجار داخل قاعدة واحدة. جدول Branches باقٍ باسم المصدر، مع BranchId=1 داخل قاعدة الفرع. يمكن تكرار هذه الهوية المحلية في قواعد مستقلة دون مشاركة بياناتها.
+
+الهدف SQL Server 2022 بمستوى توافق 160 وEF Core 10. صورة Developer للتطوير والاختبار فقط. عند النشر، يختار Express أو ترخيص مناسب، وتضبط صلاحيات حساب تشغيل كل قاعدة ضمن حدودها. لا يوزع حساب SQL الإداري على الموظفين؛ اختبارات العزل الحالية لا تثبت اكتمال تجهيز حسابات SQL للعملاء.
+
+تنشئ Migrations عدد 21 جدولاً للإعداد والعملات والشركة والحسابات المرجعية والفترات وأنواع المستندات والأمن والتدقيق وCustomSettings. توجد مفاتيح وعلاقات دون حذف متسلسل، وقيود قيم وتواريخ وتفرّد، وrowversion، ومرشحات حذف منطقي. تمنع Migration ثانية تعديل أو حذف AuditLogs في SQL نفسه. لا توجد قيود يومية أو فواتير أو حركات مخزون بعد.
+
+استكمالات مقصودة للمصدر:
+
+- Code للعملة والدور، وBranchId للشركة، وحقول توقيت UTC وتزامن مشتركة.
+- سعر صرف NULL يعني غير مهيأ؛ لا تعادل وهمي بين العملات ولا عملة أساس مختارة تلقائياً.
+- CostingMethod للشركة يبقى غير مهيأ حتى اختيار العميل.
+- دقة حقول الحساب الافتتاحي والحد الائتماني (18,2) وسعر الصرف (18,6) تتبع DDL الأصلي مؤقتاً. ليست سياسة تقريب نهائية؛ يجب حسم DEC-004 وترقية التخزين عند الحاجة قبل P04. لا عمليات مالية تعتمدها حالياً.
+- FK ومنع ارتباط المجموعة بنفسها لا يكفيان لمنع كل الدورات الطويلة؛ تداخل الفترات وشجرة الحسابات التفصيلية والافتتاحيات لم تكتمل.
+
+## الاتصال والتشفير
+
+المتغير الخاص بالأداة: HISABTAK_Database__ConnectionString. لا تمرره في وسيطات الأوامر ولا تحفظ قيمته في Git أو تطبعها. يتطلب التسجيل اسم قاعدة تطبيق صريحاً، ويرفض قواعد النظام والتشفير الاختياري وTrustServerCertificate=True.
+
+مثال Windows Integrated Authentication دون كلمة مرور، بعد تجهيز شهادة خادم موثوقة:
+
+```powershell
+$env:HISABTAK_Database__ConnectionString = 'Server=localhost;Database=HisabTak_TraderA_BranchA;Integrated Security=True;Encrypt=True;TrustServerCertificate=False'
+```
+
+اختبار الخادم المحلي يستخدم شهادة مولدة ومثبتة صراحة عبر Encrypt=Strict وServer Certificate. لا يعطّل التحقق، ولا يستخدم شهادة الاختبار القصيرة كاعتماد إنتاجي.
+
+WPF ما زال يعرض نافذة التأسيس ولا يتصل بالقاعدة أو يطبق Migrations تلقائياً. أدوات الإدارة مستقلة عن شاشة المستخدم؛ واجهات الدخول والإعداد لاحقة.
+
+## تهيئة قاعدة جديدة
+
+من جذر الحل، بعد ضبط الاتصال بشكل آمن:
+
+```bash
+dotnet tool restore
+dotnet restore HisabTak.slnx --locked-mode
+dotnet build HisabTak.slnx --configuration Release --no-restore -m:1 -nr:false
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- migrate
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- probe
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- seed
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- init-owner
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- init-company
+```
+
+migrate ينشئ القاعدة الجديدة بصلاحية SQL مناسبة، وprobe ينفذ SELECT 1. لا يثبت probe على master صلاحية إنشاء قاعدة أخرى.
+
+Seed يضيف المفقود ويحافظ على الأسماء المخصصة والمحذوفات دون إعادتها تلقائياً. يضيف YER/SAR/USD ووحدات شائعة وأربع مجموعات حسابات عليا وأربعة تصنيفات عامة و20 نوع مستند وأربعة أدوار وصلاحيات التأسيس. لا يدعي اكتمال شجرة الحسابات التفصيلية في P04. لا ينشئ اسم تاجر أو فرع أو حساباً تفصيلياً أو ضريبة أو سعر صرف أو كلمة مرور.
+
+أول مالك ينشأ مرة واحدة داخل معاملة وقفل SQL. تدخل كلمة المرور تفاعلياً مرتين دون ظهور، وتحفظ BCrypt بكلفة 12. الحد 12 محرفاً على الأقل و72 بايت UTF-8 كحد أقصى لمنع الاقتطاع. لا كلمة مرور جاهزة ولا إعادة فتح للتأسيس عند تعطيل أو حذف مستخدم. استعادة وصول المالك تحتاج إجراءً مصرحاً لاحقاً، دون حساب خلفي.
+
+init-company يحتاج دخولاً صحيحاً وصلاحية SETUP.MANAGE، وينشئ الشركة والفرع معاً أو يتراجع عنهما معاً، دون اختيار عملة أساس أو أسعار بالنيابة عن العميل.
+
+## الصلاحيات والتدقيق
+
+- Owner يحصل على صلاحيات التأسيس المعروفة. الكاشير والمحاسب ومدير الفرع موجودون دون منح مالي تلقائي غير معتمد؛ ليست أدوار عمل نهائية بعد.
+- المنح إيجابية لصلاحية مطابقة من دور فعال أو منحة فردية. لا وراثة ضمنية من الأب ولا نموذج Deny مفترض.
+- الموقوف والمحذوف والصلاحية غير المعروفة ترفض. ترجع المصادقة هوية فقط، دون Hash.
+- سجلات التأسيس والدخول والنسخ والاستعادة لا تضم كلمات مرور أو Hash أو سلسلة اتصال أو تفاصيل حساسة.
+- قفل محاولات الدخول والتفويض الكامل لإدارة المنح وتغطية كل أفعال التدقيق لم تكتمل؛ يجب إكمالها قبل واجهة دخول تشغيلية.
+
+## الترقية والنسخ والاستعادة
+
+ترقية قاعدة موجودة عبر الأداة تحتاج مسار نسخة جديداً ودخول مستخدم مخول؛ تنشأ النسخة وتتحقق قبل الترقية:
+
+```bash
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- migrate /server/backup/new-before-upgrade.bak
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- backup /server/backup/new-copy.bak
+dotnet run --project src/HisabTak.Tools --configuration Release --no-build -- restore-new /server/backup/new-copy.bak HisabTak_Restored /server/data
+```
+
+المسارات على جهاز SQL وتحتاج صلاحية حساب خدمته، وقد تختلف عن جهاز الواجهة. القاعدة الجزئية التي تفتقر إلى جداول الأمن تحتاج نسخة وإصلاحاً إداريين قبل استخدام EF يدوياً. لا تحذف سجل Migrations ولا تستخدم EnsureCreated لتجاوز المشكلة.
+
+النسخ COPY_ONLY مع CHECKSUM ثم VERIFYONLY إلى ملف جديد. يسجل آخر نجاح بعد التحقق. إذا نجح إنشاء الملف ثم فشل حفظ التدقيق أو التوقيت، قد يبقى ملف صحيح رغم فشل الأداة؛ يفحص إدارياً ولا يعاد الكتابة فوقه. الملف الخارجي لا يرجع ضمن معاملة SQL.
+
+الاستعادة لقاعدة جديدة فقط، وترفض الأصل والهدف الموجود وتستخدم أسماء ملفات جديدة دون WITH REPLACE أو تغيير الأصل إلى SINGLE_USER. عند الفشل قد يبقى هدف جديد يحتاج فحصاً إدارياً؛ لا يحذف تلقائياً. استعادة قاعدة العميل الحالية والجدولة وواجهتها والإقفال السنوي ما زالت ضمن P11.
+
+للمراجعة دون تطبيق، أنشئ مجلد artifacts أولاً:
+
+```bash
+dotnet ef migrations has-pending-model-changes --project src/HisabTak.Infrastructure --startup-project src/HisabTak.Tools --configuration Release --no-build
+dotnet ef migrations script --idempotent --project src/HisabTak.Infrastructure --startup-project src/HisabTak.Tools --configuration Release --no-build --output artifacts/migrations.sql
+```
+
+ابنِ الحل بعد توليد Migration وقبل استعمال --no-build لتوليد التالية، كي ترى الأداة snapshot الجديدة. توليد SQL لا يثبت تنفيذه بنجاح.
+
+## اختبارات SQL الفعلية
+
+تحتاج Docker محلياً وPython 3 وopenssl وSDK المثبت. يستخدم المساعد صورة Microsoft مثبتة بالبصمة، وحساب sa عشوائياً للاختبار فقط، واتصال loopback وشهادة مثبتة. تبقى الاعتماديات في ملفات تشغيل خاصة خارج Git ولا تطبع قيمها.
+
+```bash
+python3 eng/sql-test-server.py start --runtime-file /tmp/hisabtak-sql-runtime.json
+python3 eng/run-sql-tests.py /tmp/hisabtak-sql-runtime.json
+python3 eng/sql-test-server.py stop --runtime-file /tmp/hisabtak-sql-runtime.json
+```
+
+اختر ملف تشغيل غير موجود. start يحتاج نجاح SELECT 1 مشفر، وstop يحذف حاوية الاختبار المملوكة وبياناتها فقط. يحتفظ بملفات التشغيل الخاصة، ولا يعاد استخدامها بعد الإيقاف. هذه الدورة **لم تختبر حتى النهاية حالياً** بسبب حجب التنزيل.
+
+يمكن توفير HISABTAK_TEST_SQL_CONNECTION وHISABTAK_TEST_SQL_DATA_DIRECTORY بشكل آمن لخادم SQL 2022 اختباري موجود مع التحقق من الشهادة. لا تستخدم بيانات عميل: الاختبارات تنشئ وتسقط قواعد عشوائية تبدأ HisabTak_Test_ وتفتعل تعارضاً وفشلاً ونسخاً واستعادة.
+
+المشغل يرفض صفر اختبارات أو تجاوز أي اختبار مختار، ويتحقق من TRX جديد ويحافظ على رمز فشل dotnet test. التشغيل العام دون متغيرات SQL يعلن تسعة اختبارات متجاوزة؛ ليست نجاحاً لتكامل SQL. مهمة CI المخصصة لها لم تشغل على GitHub بعد.
+
+## عائق الشبكة
+
+mcr.microsoft.com مسموح، لكنه يحول تنزيل الطبقات إلى westcentralus.data.mcr.microsoft.com المحجوب. حُفظت إضافة المضيف المحدد في مسودة إعدادات البيئة مع حفظ بقية القائمة. المسودة لا تطبق السياسة الحالية ولا تنشر البيئة.
+
+يلزم مراجعة التغيير وحفظه في إعدادات البيئة، ثم نشر البيئة عند طلب الواجهة، وإعادة التنزيل والتحقق. لا تعطل TLS أو تغير الوكيل أو تتجاوز الحجب لمعالجة المشكلة.

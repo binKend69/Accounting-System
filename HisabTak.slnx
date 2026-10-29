@@ -4,6 +4,7 @@
     <Project Path="src/HisabTak.Application/HisabTak.Application.csproj" />
     <Project Path="src/HisabTak.Infrastructure/HisabTak.Infrastructure.csproj" />
     <Project Path="src/HisabTak.WPF/HisabTak.WPF.csproj" />
+    <Project Path="src/HisabTak.Tools/HisabTak.Tools.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/HisabTak.Domain.Tests/HisabTak.Domain.Tests.csproj" />

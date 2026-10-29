@@ -9,6 +9,7 @@ public sealed class ArchitectureTests
     [InlineData("Application", new[] { "Domain" })]
     [InlineData("Infrastructure", new[] { "Application", "Domain" })]
     [InlineData("WPF", new[] { "Application", "Infrastructure" })]
+    [InlineData("Tools", new[] { "Application", "Infrastructure" })]
     public void Project_dependencies_follow_the_architecture(string layer, string[] expected)
     {
         var root = RepositoryRoot();
