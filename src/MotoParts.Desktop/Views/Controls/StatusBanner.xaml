@@ -1,0 +1,21 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Controls.StatusBanner"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Bound to the page's ErrorMessage / SuccessMessage. Hidden when both are empty. -->
+    <StackPanel>
+        <Border Background="{StaticResource DangerSoft}" CornerRadius="5" Padding="12,9" Margin="0,0,0,10"
+                Visibility="{Binding ErrorMessage, Converter={StaticResource VisibleIfAny}}">
+            <DockPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE783;" Foreground="{StaticResource Danger}" Margin="0,0,10,0" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource Danger}" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+        <Border Background="{StaticResource SuccessSoft}" CornerRadius="5" Padding="12,9" Margin="0,0,0,10"
+                Visibility="{Binding SuccessMessage, Converter={StaticResource VisibleIfAny}}">
+            <DockPanel>
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE73E;" Foreground="{StaticResource Success}" Margin="0,0,10,0" />
+                <TextBlock Text="{Binding SuccessMessage}" Foreground="{StaticResource Success}" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

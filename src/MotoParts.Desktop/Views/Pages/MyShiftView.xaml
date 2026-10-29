@@ -1,0 +1,116 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.MyShiftView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20">
+            <controls:StatusBanner />
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="340" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Till: open -->
+                <Border Style="{StaticResource Card}" Visibility="{Binding HasOpenSession, Converter={StaticResource Visible}, ConverterParameter=invert}">
+                    <StackPanel MaxWidth="460" HorizontalAlignment="Left">
+                        <TextBlock Text="فتح وردية جديدة" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Text="عُدّ النقد الموجود في الدرج قبل البدء وأدخله كعهدة افتتاحية."
+                                   Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,14" />
+                        <TextBlock Text="الوردية" Style="{StaticResource FieldLabel}" />
+                        <ComboBox ItemsSource="{Binding ShiftTemplates}" SelectedItem="{Binding SelectedShift}" DisplayMemberPath="Name" Margin="0,0,0,10" />
+                        <TextBlock Text="العهدة الافتتاحية (المبلغ في الدرج)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding OpeningCashText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberBox}" FontSize="18" Margin="0,0,0,10" />
+                        <TextBlock Text="ملاحظات (اختياري)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding Notes}" Margin="0,0,0,16" />
+                        <Button Content="فتح الوردية" Style="{StaticResource PrimaryButton}" MinHeight="44" Command="{Binding OpenTillCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Till: close -->
+                <Border Style="{StaticResource Card}" Visibility="{Binding HasOpenSession, Converter={StaticResource Visible}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="ورديتك الحالية" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,12">
+                                فُتحت في <Run Text="{Binding Session.OpenedAt, Converter={StaticResource Date}, Mode=OneWay}" />
+                            </TextBlock>
+
+                            <DockPanel Margin="0,3"><TextBlock DockPanel.Dock="Right" Text="{Binding Totals.OpeningCash, Converter={StaticResource Money}}" FlowDirection="LeftToRight" /><TextBlock Text="العهدة الافتتاحية" /></DockPanel>
+                            <DockPanel Margin="0,3"><TextBlock DockPanel.Dock="Right" Text="{Binding Totals.CashSales, Converter={StaticResource Money}}" FlowDirection="LeftToRight" /><TextBlock Text="+ المبيعات النقدية" /></DockPanel>
+                            <DockPanel Margin="0,3"><TextBlock DockPanel.Dock="Right" Text="{Binding Totals.CashRefunds, Converter={StaticResource Money}}" FlowDirection="LeftToRight" /><TextBlock Text="- المرتجعات النقدية" /></DockPanel>
+                            <DockPanel Margin="0,3"><TextBlock DockPanel.Dock="Right" Text="{Binding Totals.CashReceipts, Converter={StaticResource Money}}" FlowDirection="LeftToRight" /><TextBlock Text="+ مقبوضات على الدرج" /></DockPanel>
+                            <DockPanel Margin="0,3"><TextBlock DockPanel.Dock="Right" Text="{Binding Totals.CashPayouts, Converter={StaticResource Money}}" FlowDirection="LeftToRight" /><TextBlock Text="- مدفوعات من الدرج" /></DockPanel>
+                            <Border BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Margin="0,8,0,0" Padding="0,8,0,0">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Totals.Expected, Converter={StaticResource Money}}" FlowDirection="LeftToRight" FontSize="20" FontWeight="Bold" />
+                                    <TextBlock Text="المتوقع في الدرج" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Button Content="معاينة تقرير الوردية" Style="{StaticResource LinkButton}" HorizontalAlignment="Left" Margin="0,10,0,0" Command="{Binding PrintCurrentCommand}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="إغلاق الوردية" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="عُدّ كل النقد في الدرج وأدخل المبلغ الفعلي. أي فرق عن المتوقع يُسجَّل باسمك."
+                                       Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,14" />
+                            <TextBlock Text="المبلغ المعدود فعلياً" Style="{StaticResource FieldLabel}" />
+                            <TextBox Text="{Binding CountedCashText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberBox}" FontSize="18" Margin="0,0,0,10" />
+                            <TextBlock Text="ملاحظات (اختياري)" Style="{StaticResource FieldLabel}" />
+                            <TextBox Text="{Binding Notes}" Margin="0,0,0,16" />
+                            <Button Content="إغلاق الوردية" Style="{StaticResource DangerButton}" MinHeight="44" Command="{Binding CloseTillCommand}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Attendance -->
+                <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="الحضور والانصراف" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Text="{Binding AttendanceText}" TextWrapping="Wrap" Margin="0,0,0,14" />
+                        <Button Content="تسجيل الحضور" Style="{StaticResource PrimaryButton}" Command="{Binding CheckInCommand}"
+                                Visibility="{Binding CanCheckIn, Converter={StaticResource Visible}}" />
+                        <Button Content="تسجيل الانصراف" Command="{Binding CheckOutCommand}"
+                                Visibility="{Binding CanCheckOut, Converter={StaticResource Visible}}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                <StackPanel>
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="طباعة تقرير الوردية المحددة" Command="{Binding PrintSelectedCommand}" />
+                        <TextBlock Text="ورديّاتي السابقة" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <DataGrid ItemsSource="{Binding RecentSessions}" SelectedItem="{Binding SelectedSession}" Margin="0,8,0,0" MaxHeight="360">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#" Binding="{Binding Id}" Width="60" />
+                            <DataGridTextColumn Header="الوردية" Binding="{Binding ShiftName}" Width="*" />
+                            <DataGridTextColumn Header="الفتح" Binding="{Binding OpenedAt, Converter={StaticResource Date}}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                            <DataGridTextColumn Header="الإغلاق" Binding="{Binding ClosedAt, Converter={StaticResource Date}}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                            <DataGridTextColumn Header="المتوقع" Binding="{Binding ExpectedCash, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCell}" />
+                            <DataGridTextColumn Header="المعدود" Binding="{Binding ActualClosingCash, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCell}" />
+                            <DataGridTemplateColumn Header="الفرق" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding CashDifference, Converter={StaticResource Money}}" Style="{StaticResource AmountCellBold}"
+                                                   Foreground="{Binding CashDifference, Converter={StaticResource SignBrush}, ConverterParameter=signed}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="الحالة" Binding="{Binding Status, Converter={StaticResource Arabic}}" Width="110" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

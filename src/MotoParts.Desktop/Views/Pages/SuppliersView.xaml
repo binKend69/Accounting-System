@@ -1,0 +1,34 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.SuppliersView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <DockPanel Margin="24,16">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+            <WrapPanel>
+                <Button Content="مورد جديد" Style="{StaticResource PrimaryButton}" Command="{Binding AddCommand}" Margin="0,0,8,6"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="تعديل" Command="{Binding EditCommand}" Margin="0,0,8,6"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="دفع للمورد" Command="{Binding PayCommand}" Margin="0,0,8,6"
+                        Visibility="{Binding CanPay, Converter={StaticResource Visible}}" />
+                <Button Content="كشف حساب" Command="{Binding StatementCommand}" Margin="0,0,8,6" />
+                <Button Content="رصيد افتتاحي" Command="{Binding OpeningBalanceCommand}" Margin="0,0,16,6"
+                        Visibility="{Binding CanSetOpening, Converter={StaticResource Visible}}" />
+                <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="220" Margin="0,0,0,6" ToolTip="الاسم أو الهاتف" />
+            </WrapPanel>
+        </DockPanel>
+        <controls:StatusBanner DockPanel.Dock="Top" />
+        <DataGrid ItemsSource="{Binding Suppliers}" SelectedItem="{Binding Selected}" MouseDoubleClick="OnDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="المورد" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="المسؤول" Binding="{Binding ContactPerson}" Width="140" />
+                <DataGridTextColumn Header="الهاتف" Binding="{Binding Phone}" Width="130" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الرقم الضريبي" Binding="{Binding TaxNumber}" Width="150" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="المشتريات" Binding="{Binding PurchaseCount}" Width="80" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="المستحق له" Binding="{Binding Balance, Converter={StaticResource Money}}" Width="120" ElementStyle="{StaticResource AmountCellBold}" />
+                <DataGridTextColumn Header="نشط" Binding="{Binding IsActive, Converter={StaticResource YesNo}}" Width="60" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,43 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Forms.SupplierFormView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="اسم المورد *" Style="{StaticResource FieldLabel}" />
+        <TextBox Text="{Binding Name}" Margin="0,0,0,10" />
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="الشخص المسؤول" Style="{StaticResource FieldLabel}" />
+                <TextBox Text="{Binding ContactPerson}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="الهاتف" Style="{StaticResource FieldLabel}" />
+                <TextBox Text="{Binding Phone}" Style="{StaticResource NumberBox}" />
+            </StackPanel>
+        </Grid>
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="البريد الإلكتروني" Style="{StaticResource FieldLabel}" />
+                <TextBox Text="{Binding Email}" FlowDirection="LeftToRight" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="الرقم الضريبي" Style="{StaticResource FieldLabel}" />
+                <TextBox Text="{Binding TaxNumber}" Style="{StaticResource NumberBox}" />
+            </StackPanel>
+        </Grid>
+        <TextBlock Text="العنوان" Style="{StaticResource FieldLabel}" />
+        <TextBox Text="{Binding Address}" Margin="0,0,0,10" />
+        <TextBlock Text="ملاحظات" Style="{StaticResource FieldLabel}" />
+        <TextBox Text="{Binding Notes}" Style="{StaticResource MultiLineBox}" Margin="0,0,0,10" />
+        <CheckBox Content="مورد نشط" IsChecked="{Binding IsActive}" />
+    </StackPanel>
+</UserControl>
