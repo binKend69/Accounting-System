@@ -1,0 +1,22 @@
+<Window x:Class="HisabTak.WPF.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Title}" Language="ar-YE"
+        Width="1000" Height="650" MinWidth="640" MinHeight="420"
+        WindowStartupLocation="CenterScreen" Background="#F4F6F8">
+    <Grid Margin="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="SemiBold" Foreground="#153A4A" />
+        <Border Grid.Row="1" Background="White" CornerRadius="12" Padding="32" Margin="0,24">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="مرحباً بك" FontSize="32" FontWeight="SemiBold" TextAlignment="Center" Foreground="#153A4A" />
+                <TextBlock Text="مساحة العمل" FontSize="18" Margin="0,12,0,0" TextAlignment="Center" Foreground="#52616B" />
+            </StackPanel>
+        </Border>
+        <TextBlock Grid.Row="2" Text="{Binding Version, StringFormat=الإصدار {0}}" Foreground="#52616B" />
+    </Grid>
+</Window>

@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HisabTak.Domain/HisabTak.Domain.csproj" />
+    <Project Path="src/HisabTak.Application/HisabTak.Application.csproj" />
+    <Project Path="src/HisabTak.Infrastructure/HisabTak.Infrastructure.csproj" />
+    <Project Path="src/HisabTak.WPF/HisabTak.WPF.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HisabTak.Domain.Tests/HisabTak.Domain.Tests.csproj" />
+    <Project Path="tests/HisabTak.Application.Tests/HisabTak.Application.Tests.csproj" />
+    <Project Path="tests/HisabTak.Infrastructure.Tests/HisabTak.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>

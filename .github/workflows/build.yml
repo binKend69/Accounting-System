@@ -1,0 +1,33 @@
+name: Foundation build and tests
+
+on:
+  push:
+    branches: [Feature-account-system]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore HisabTak.slnx --locked-mode
+      - run: dotnet build HisabTak.slnx --no-restore --configuration Release -m:1 -nr:false
+      - run: dotnet test HisabTak.slnx --no-build --no-restore --configuration Release --logger trx
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: tests/**/TestResults/*.trx

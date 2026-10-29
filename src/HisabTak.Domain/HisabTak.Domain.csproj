@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>HisabTak domain rules; independent of persistence and presentation.</Description>
+  </PropertyGroup>
+</Project>

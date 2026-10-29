@@ -1,0 +1,88 @@
+# تشغيل أساس HisabTak وتطويره — P02
+
+هذه تعليمات الحل الجديد على `Feature-account-system`. المستندات الأصلية في الجذر محفوظة كمرجع تاريخي. [مرجع المتطلبات](../requirements/README.md) و[تقرير التأسيس](foundation-status.md) يحددان النطاق الحالي.
+
+## المتطلبات
+
+- SDK 10.0.403 المحدد في global.json، ضمن .NET 10 LTS. يسمح latestPatch بتصحيح SDK ضمن feature band نفسه، دون الانتقال تلقائياً إلى إصدار رئيسي أو preview.
+- Windows لتشغيل WPF. يمكن على Linux بناء الواجهة عبر EnableWindowsTargeting وتشغيل اختبارات المكتبات، دون تشغيل الواجهة تفاعلياً.
+- P02 لا يتصل بقاعدة بيانات ولا ينشئها. SQL Server ومزوده وMigrations تختبر في P03؛ لا تحتاج إلى سلسلة اتصال أو أسرار لتشغيل نافذة التأسيس.
+
+في البيئة السحابية الحالية، إذا لم يكن dotnet في PATH، فعّل SDK المثبت:
+
+```bash
+export DOTNET_ROOT=/workspace/.dotnet
+export PATH="$DOTNET_ROOT:$PATH"
+export DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_NOLOGO=1
+cd /workspace/Accounting-System
+```
+
+هذه مسارات البيئة الحالية فقط؛ بقية الأوامر تنفذ من جذر أي checkout يحتوي HisabTak.slnx.
+
+## البناء والاختبارات
+
+```bash
+dotnet --version
+dotnet restore HisabTak.slnx --locked-mode
+dotnet build HisabTak.slnx --no-restore --configuration Release -m:1 -nr:false
+dotnet test HisabTak.slnx --no-build --no-restore --configuration Release --logger trx
+dotnet list HisabTak.slnx package --vulnerable --include-transitive
+```
+
+إصدارات الحزم المباشرة في Directory.Packages.props. تحفظ ملفات packages.lock.json شجرة الاعتماديات وبصماتها؛ تفشل الاستعادة المقفلة عند اختلافها. تحديث الحزم مقصود ويحتاج مراجعة القفل والاختبارات؛ لا تحذف القفل لحل فشل restore. المصدر المحدد هو NuGet الرسمي، وTLS وتدقيق الحزم فعالان. نستخدم عامل MSBuild واحداً لتجنب تعطل العمال الذي ظهر أثناء إعداد البيئة السابقة.
+
+الاختبارات الحالية 14 اختبار تأسيس، وليست اختبارات محاسبة أو SQL. ملفات TRX تحت TestResults في كل مشروع اختبار. Workflow في .github/workflows/build.yml يشغل البناء والاختبارات على Linux وWindows عند تشغيله على GitHub؛ وجود الملف لا يثبت حدوث تشغيل بعيد.
+
+قيود التنفيذ السحابية قد تتطلب صلاحية تنفيذ موسعة لاستعادة الحزم وعمل MSBuild والاختبارات. لا تعطل الوكيل أو TLS أو التحقق من الحزم لمعالجة ذلك.
+
+## تشغيل النافذة على Windows
+
+```powershell
+dotnet run --project src/HisabTak.WPF --configuration Release --no-restore
+```
+
+الواجهة الأولية عربية RTL وثقافتها ar-YE؛ الثقافة لعرض الواجهة، وليست اختياراً لعملة أساس أو سياسة تقريب. تعرض نافذة ترحيب وإصداراً تقنياً فقط؛ لا عمليات مالية أو حسابات دخول أو قاعدة بيانات بعد.
+
+التحقق اليدوي التالي مطلوب على Windows ولم ينفذ في Linux:
+
+1. فتح النافذة والتحقق من RTL والنص والإصدار وتغيير الحجم والإغلاق.
+2. التأكد من إنشاء السجل وتحرير ملفه بعد الإغلاق.
+3. تجربة إعداد سجل غير صالح والتحقق من رسالة فشل مفهومة وخروج غير ناجح.
+
+البناء وحده لا يثبت صحة هذه التفاعلات.
+
+## الإعدادات والسجلات
+
+الأولوية من الأدنى للأعلى: appsettings.json المنشور، ثم appsettings.local.json الاختياري، ثم متغيرات HISABTAK_ مع فاصل الأقسام __. لا تحميل لـUser Secrets أو إعدادات مراقبة متغيرة أو أي خدمة خارجية. مثال:
+
+```text
+HISABTAK_Diagnostics__Directory=C:\HisabTakLogs
+```
+
+الإعداد المحلي غير متتبع. على Windows يمكن إنشاؤه دون تعديل الملف المنشور:
+
+```json
+{
+  "Diagnostics": {
+    "Directory": "D:\\HisabTakLogs",
+    "RetainedFileCountLimit": 14
+  }
+}
+```
+
+المجلد الفارغ يعني مجلد HisabTak/Logs داخل LocalApplicationData للمستخدم؛ على Windows يكون عادة تحت %LOCALAPPDATA%. لا نكتب السجل إلى مجلد تنصيب البرنامج. المسار المحدد يجب أن يكون مطلقاً وقابلاً للكتابة.
+
+الحد 1–365 لعدد ملفات **السجل التشخيصي**، وليس سياسة نسخ قاعدة البيانات. الدوران يومي وعند 10MiB. تتولى خدمة التسجيل إغلاق الملفات وتفريغها عند Dispose. لا تسجل إعدادات أو أسرار أو بيانات مالية. فشل إعداد السجل يمنع بدء التشغيل، ولا تعرض تفاصيل استثناء التهيئة التي قد تحتوي سراً.
+
+السجلات التشخيصية ليست AuditLogs المالية المطلوبة لاحقاً، وليست نسخاً احتياطية.
+
+## البنية والمسؤوليات
+
+- Domain يحتوي هوية assembly لتدقيق الاعتماد فقط؛ الكيانات والقواعد المالية تبدأ لاحقاً.
+- Application يسجل الهوية التقنية؛ لا SQL ولا WPF فيه.
+- Infrastructure يهيئ الإعدادات والتحقق والسجل ودورة Host؛ التخزين المالي مؤجل إلى P03.
+- WPF يجمع الخدمات في App ويحقن ViewModel في النافذة؛ لا اتصال قاعدة بيانات من ViewModel.
+- اختبارات الحدود تفحص المراجع المباشرة للمشاريع وبعض مراجع assemblies والمراجع النصية المحظورة في ViewModels. ليست تحليلاً كاملاً لكل IL أو ضماناً لكل المسارات المستقبلية؛ توسع مع الوحدات الجديدة.
+
+اسم HisabTak مؤقت بحسب DEC-010. يؤجل Shared حتى تظهر مسؤولية مشتركة فعلية تحافظ على عزل Domain؛ القرار موثق في DEC-009.
