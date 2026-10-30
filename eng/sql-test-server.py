@@ -48,6 +48,34 @@ def startup_diagnostics(name, password, connection, last_probe):
             print("Diagnostic command unavailable: " + type(error).__name__, file=sys.stderr)
 
 
+def create_test_certificate(directory):
+    """Issue a server-auth leaf from a disposable local CA, with explicit SQL TLS usages."""
+    certificate, key = directory / "server.crt", directory / "server.key"
+    ca, ca_key = directory / "ca.crt", directory / "ca.key"
+    extensions = directory / "server.ext"
+    extensions.write_text("basicConstraints=critical,CA:FALSE\n"
+                          "keyUsage=critical,digitalSignature,keyEncipherment\n"
+                          "extendedKeyUsage=serverAuth\n"
+                          "subjectAltName=DNS:localhost,IP:127.0.0.1\n")
+    commands = [
+        ["req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "7", "-nodes",
+         "-keyout", str(ca_key), "-out", str(ca), "-subj", "/CN=HisabTak Disposable Test CA",
+         "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign"],
+        ["req", "-new", "-newkey", "rsa:2048", "-sha256", "-nodes", "-keyout", str(key),
+         "-out", str(directory / "server.csr"), "-subj", "/CN=localhost"],
+        ["x509", "-req", "-in", str(directory / "server.csr"), "-CA", str(ca), "-CAkey", str(ca_key),
+         "-CAcreateserial", "-out", str(certificate), "-days", "7", "-sha256", "-extfile", str(extensions)],
+    ]
+    # Ensure generated private keys are private from the moment OpenSSL creates them.
+    previous_mask = os.umask(0o077)
+    try:
+        for command in commands:
+            subprocess.run(["openssl", *command], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    finally:
+        os.umask(previous_mask)
+    return certificate, key
+
+
 def start(runtime_file):
     if runtime_file.is_relative_to(ROOT):
         raise SystemExit("Runtime credentials must remain outside the repository.")
@@ -64,13 +92,7 @@ def start(runtime_file):
     environment_file = directory / "server.env"
     with os.fdopen(os.open(environment_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
         output.write("MSSQL_SA_PASSWORD=" + password + "\n")
-    certificate = directory / "server.crt"
-    key = directory / "server.key"
-    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "7", "-nodes",
-                    "-keyout", str(key), "-out", str(certificate), "-subj", "/CN=localhost",
-                    "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"],
-                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    key.chmod(0o600)
+    certificate, key = create_test_certificate(directory)
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
