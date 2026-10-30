@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sys
 import socket
 import subprocess
 import tarfile
@@ -27,6 +28,24 @@ def docker(*args, **kwargs):
 def private_json(path, value):
     with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
         json.dump(value, output)
+
+
+def startup_diagnostics(name, password, connection, last_probe):
+    """Bounded diagnostics for this disposable server only; never dump its environment."""
+    def safe(value):
+        return value.replace(connection, "[connection redacted]").replace(password, "[password redacted]")
+
+    print("Last SQL probe: " + safe(last_probe)[-2000:], file=sys.stderr)
+    for arguments in [
+        ("inspect", "--format", "status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}", name),
+        ("logs", "--tail", "80", name),
+    ]:
+        try:
+            result = docker(*arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
+            # Redact before truncation so a truncation boundary cannot expose a partial secret.
+            print(safe(result.stdout)[-16000:], file=sys.stderr)
+        except (subprocess.SubprocessError, OSError) as error:
+            print("Diagnostic command unavailable: " + type(error).__name__, file=sys.stderr)
 
 
 def start(runtime_file):
@@ -82,15 +101,22 @@ def start(runtime_file):
     environment = os.environ.copy()
     environment["HISABTAK_Database__ConnectionString"] = connection
     deadline = time.monotonic() + 60
+    last_probe = "No probe completed."
     while time.monotonic() < deadline:
-        result = subprocess.run(["dotnet", "run", "--project", "src/HisabTak.Tools", "--configuration", "Release",
-                                 "--no-build", "--no-restore", "--", "probe"], cwd=ROOT, env=environment,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        try:
+            result = subprocess.run(["dotnet", "run", "--project", "src/HisabTak.Tools", "--configuration", "Release",
+                                     "--no-build", "--no-restore", "--", "probe"], cwd=ROOT, env=environment,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            last_probe = "Probe process exceeded its 10-second timeout."
+            continue
+        last_probe = result.stdout.replace(connection, "[connection redacted]").replace(password, "[password redacted]")
         if result.returncode == 0:
             print("SQL SELECT 1 passed with strict certificate verification.")
             print("Private runtime file:", runtime_file)
             return
         time.sleep(1)
+    startup_diagnostics(name, password, connection, last_probe)
     raise SystemExit("SQL readiness failed. The owned container and private runtime file were preserved for diagnosis.")
 
 
