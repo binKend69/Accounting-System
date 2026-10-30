@@ -30,6 +30,10 @@ public sealed record CurrencyAmount
 
     public CurrencyAmount Negate() => new(-Amount, CurrencyId);
 
+    /// <summary>Explicit rounding only; callers supply the currency's approved precision.</summary>
+    public CurrencyAmount Round(int decimalPlaces) =>
+        new(decimal.Round(Amount, decimalPlaces, MidpointRounding.AwayFromZero), CurrencyId);
+
     private void RequireSameCurrency(CurrencyAmount other)
     {
         ArgumentNullException.ThrowIfNull(other);
