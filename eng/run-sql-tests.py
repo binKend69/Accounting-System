@@ -17,6 +17,8 @@ runtime = json.loads(arguments.runtime_file.read_text())
 environment = os.environ.copy()
 environment["HISABTAK_TEST_SQL_CONNECTION"] = runtime["connection"]
 environment["HISABTAK_TEST_SQL_DATA_DIRECTORY"] = runtime["server_data_directory"]
+if "ca_bundle" in runtime:
+    environment["SSL_CERT_FILE"] = runtime["ca_bundle"]
 report = ROOT / "tests/HisabTak.Infrastructure.Tests/TestResults/sql-integration.trx"
 previous = (report.stat().st_mtime_ns, report.stat().st_size) if report.exists() else None
 result = subprocess.run(["dotnet", "test", "tests/HisabTak.Infrastructure.Tests", "--configuration", "Release",

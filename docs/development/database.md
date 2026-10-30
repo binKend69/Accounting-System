@@ -28,7 +28,7 @@
 $env:HISABTAK_Database__ConnectionString = 'Server=localhost;Database=HisabTak_TraderA;Integrated Security=True;Encrypt=True;TrustServerCertificate=False'
 ```
 
-اختبار الخادم المحلي يستخدم شهادة مولدة ومثبتة صراحة عبر Encrypt=Strict وServer Certificate. لا يعطّل التحقق، ولا يستخدم شهادة الاختبار القصيرة كاعتماد إنتاجي.
+اختبار خادم Linux يستخدم شهادة خادم موقعة من CA مؤقتة، وEncrypt=Mandatory وTrustServerCertificate=False والتحقق من اسم localhost. تمرر SSL_CERT_FILE إلى عمليات probe والاختبارات فقط، وتشير إلى حزمة تجمع جذور النظام وCA الاختبار. لا تعديل عام لمخزن ثقة الجهاز، ولا تعطيل للتحقق. استبدل هذا المسار إعداد Strict السابق بعد استمرار الخطأ 17821؛ يبقى نجاح SQL مطلوباً على GitHub، ولا تستخدم شهادة الاختبار القصيرة كاعتماد إنتاجي.
 
 WPF ما زال يعرض نافذة التأسيس ولا يتصل بالقاعدة أو يطبق Migrations تلقائياً. أدوات الإدارة مستقلة عن شاشة المستخدم؛ واجهات الدخول والإعداد لاحقة.
 

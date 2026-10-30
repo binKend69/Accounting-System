@@ -97,6 +97,10 @@ def start(runtime_file):
     with os.fdopen(os.open(environment_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
         output.write("MSSQL_SA_PASSWORD=" + password + "\n")
     certificate, key = create_test_certificate(directory)
+    # Scope the disposable CA to these test child processes; preserve system roots.
+    system_roots = Path(os.environ.get("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt"))
+    ca_bundle = directory / "client-ca-bundle.crt"
+    ca_bundle.write_bytes(system_roots.read_bytes() + b"\n" + (directory / "ca.crt").read_bytes())
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -104,9 +108,9 @@ def start(runtime_file):
            "--memory", "3g", "--cpus", "2", "--env", "ACCEPT_EULA=Y", "--env", "MSSQL_PID=Developer",
            "--env-file", str(environment_file), IMAGE, stdout=subprocess.DEVNULL)
     connection = (f"Server=localhost,{port};Database=master;User ID=sa;Password={password};"
-                  f"Encrypt=Strict;TrustServerCertificate=False;Server Certificate={certificate};Connect Timeout=2")
+                  "Encrypt=Mandatory;TrustServerCertificate=False;HostNameInCertificate=localhost;Connect Timeout=2")
     runtime = {"container": name, "directory": str(directory), "image": IMAGE,
-               "connection": connection, "server_data_directory": "/var/opt/mssql/data"}
+               "connection": connection, "ca_bundle": str(ca_bundle), "server_data_directory": "/var/opt/mssql/data"}
     # Save before start so a failed startup remains recoverable without revealing credentials.
     private_json(runtime_file, runtime)
     config = ("[network]\ntlscert = /var/opt/mssql/tls/server.crt\n"
@@ -143,6 +147,7 @@ def start(runtime_file):
         raise SystemExit("Container TLS preflight failed; see startup diagnostics.") from None
     environment = os.environ.copy()
     environment["HISABTAK_Database__ConnectionString"] = connection
+    environment["SSL_CERT_FILE"] = str(ca_bundle)
     deadline = time.monotonic() + 60
     last_probe = "No probe completed."
     while time.monotonic() < deadline:
@@ -155,7 +160,7 @@ def start(runtime_file):
             continue
         last_probe = result.stdout.replace(connection, "[connection redacted]").replace(password, "[password redacted]")
         if result.returncode == 0:
-            print("SQL SELECT 1 passed with strict certificate verification.")
+            print("SQL SELECT 1 passed with mandatory TLS, trusted CA and hostname verification.")
             print("Private runtime file:", runtime_file)
             return
         time.sleep(1)
