@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Create/stop an owned SQL test container. Credentials stay in private runtime files."""
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -38,12 +39,15 @@ def startup_diagnostics(name, password, connection, last_probe):
     print("Last SQL probe: " + safe(last_probe)[-2000:], file=sys.stderr)
     for arguments in [
         ("inspect", "--format", "status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}", name),
-        ("logs", "--tail", "80", name),
+        ("logs", name),
     ]:
         try:
             result = docker(*arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
             # Redact before truncation so a truncation boundary cannot expose a partial secret.
-            print(safe(result.stdout)[-16000:], file=sys.stderr)
+            sanitized = safe(result.stdout)
+            if len(sanitized) > 24000:
+                sanitized = sanitized[:12000] + "\n[intermediate output omitted]\n" + sanitized[-12000:]
+            print(sanitized, file=sys.stderr)
         except (subprocess.SubprocessError, OSError) as error:
             print("Diagnostic command unavailable: " + type(error).__name__, file=sys.stderr)
 
@@ -96,7 +100,7 @@ def start(runtime_file):
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    docker("create", "--name", name, "--publish", f"127.0.0.1:{port}:1433",
+    docker("create", "--name", name, "--hostname", "localhost", "--publish", f"127.0.0.1:{port}:1433",
            "--memory", "3g", "--cpus", "2", "--env", "ACCEPT_EULA=Y", "--env", "MSSQL_PID=Developer",
            "--env-file", str(environment_file), IMAGE, stdout=subprocess.DEVNULL)
     connection = (f"Server=localhost,{port};Database=master;User ID=sa;Password={password};"
@@ -120,6 +124,23 @@ def start(runtime_file):
             tar.addfile(entry, io.BytesIO(contents))
     docker("cp", "--archive", "-", f"{name}:/var/opt/mssql", input=archive.getvalue())
     docker("start", name, stdout=subprocess.DEVNULL)
+    try:
+        configured = docker("exec", name, "cat", "/var/opt/mssql/mssql.conf", stdout=subprocess.PIPE, text=True).stdout
+        if configured.strip() != config.strip():
+            raise RuntimeError("Container TLS configuration differs from the prepared configuration.")
+        hostname = docker("exec", name, "hostname", stdout=subprocess.PIPE, text=True).stdout.strip()
+        if hostname != "localhost":
+            raise RuntimeError("Container hostname does not match the server certificate.")
+        for target, contents in [("server.crt", certificate.read_bytes()), ("server.key", key.read_bytes())]:
+            path = "/var/opt/mssql/tls/" + target
+            docker("exec", "--user", "10001", name, "test", "-r", path)
+            digest = docker("exec", name, "sha256sum", path, stdout=subprocess.PIPE, text=True).stdout.split()[0]
+            if digest != hashlib.sha256(contents).hexdigest():
+                raise RuntimeError("Copied TLS file does not match the prepared file.")
+        print("Container TLS configuration, hostname, file digests and SQL-user readability verified.")
+    except (subprocess.SubprocessError, RuntimeError) as error:
+        startup_diagnostics(name, password, connection, "TLS preflight failed: " + type(error).__name__)
+        raise SystemExit("Container TLS preflight failed; see startup diagnostics.") from None
     environment = os.environ.copy()
     environment["HISABTAK_Database__ConnectionString"] = connection
     deadline = time.monotonic() + 60
