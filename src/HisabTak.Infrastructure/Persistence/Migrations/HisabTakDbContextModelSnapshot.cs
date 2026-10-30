@@ -23,6 +23,8 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence<int>("BranchNumbers", "dbo");
+
             modelBuilder.Entity("HisabTak.Domain.Accounting.Account", b =>
                 {
                     b.Property<int>("Id")
@@ -659,8 +661,10 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("HisabTak.Domain.Setup.Branch", b =>
                 {
                     b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("int")
-                        .HasColumnName("BranchId");
+                        .HasColumnName("BranchId")
+                        .HasDefaultValueSql("NEXT VALUE FOR [dbo].[BranchNumbers]");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -689,10 +693,7 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Branches", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_Branches_LocalBranch", "[BranchId] = 1");
-                        });
+                    b.ToTable("Branches", (string)null);
                 });
 
             modelBuilder.Entity("HisabTak.Domain.Setup.Center", b =>
@@ -840,7 +841,7 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_CompanyInfo_Costing", "[CostingMethod] IS NULL OR [CostingMethod] IN (1,2)");
 
-                            t.HasCheckConstraint("CK_CompanyInfo_Singleton", "[CompanyInfoId] = 1 AND [BranchId] = 1");
+                            t.HasCheckConstraint("CK_CompanyInfo_Singleton", "[CompanyInfoId] = 1");
                         });
                 });
 

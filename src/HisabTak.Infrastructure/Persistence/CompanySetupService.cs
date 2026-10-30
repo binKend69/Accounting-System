@@ -17,9 +17,10 @@ public sealed class CompanySetupService(HisabTakDbContext database, IAuthorizati
             || await database.Branches.IgnoreQueryFilters().AnyAsync(cancellationToken))
             throw new InvalidOperationException("Company setup has already been completed.");
 
-        database.Branches.Add(new Branch(branchName));
+        var branch = new Branch(branchName);
+        database.Branches.Add(branch);
         await database.SaveChangesAsync(cancellationToken);
-        database.Companies.Add(new CompanyInfo(companyName, branchId: 1));
+        database.Companies.Add(new CompanyInfo(companyName, branch.Id));
         database.AuditLogs.Add(new AuditLog(actorId, "COMPANY_INITIALIZED", "CompanyInfo", 1, Environment.MachineName));
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

@@ -47,6 +47,7 @@ public sealed class CompanyInfo : ReferenceEntity
 {
     private CompanyInfo() { }
     public CompanyInfo(string name, int branchId) : base(name) => BranchId = branchId;
+    // The merchant's initial/default branch; this does not limit its other branches.
     public int BranchId { get; private set; }
     public string? NameEn { get; private set; }
     public string? AddressAr { get; private set; }

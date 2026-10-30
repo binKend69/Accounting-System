@@ -29,6 +29,7 @@ public static class DatabaseRegistration
         services.AddScoped<IInitialOwnerService, InitialOwnerService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddScoped<ICompanySetupService, CompanySetupService>();
+        services.AddScoped<IBranchSetupService, BranchSetupService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

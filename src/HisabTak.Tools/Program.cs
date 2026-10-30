@@ -11,7 +11,7 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 if (args.Length == 0 || args[0] is "--help" or "help")
 {
     Console.WriteLine("HisabTak database administration (explicit database connection required).");
-    Console.WriteLine("probe | migrate [new-server-backup-path] | seed | init-owner | init-company | backup <server-path> | restore-new <server-backup> <new-database> <server-data-directory>");
+    Console.WriteLine("probe | migrate [new-server-backup-path] | seed | init-owner | init-company | add-branch | backup <server-path> | restore-new <server-backup> <new-database> <server-data-directory>");
     Console.WriteLine("Set HISABTAK_Database__ConnectionString securely; passwords are prompted, never command-line arguments.");
     return 0;
 }
@@ -69,9 +69,16 @@ try
         case "init-company":
             var owner = await AuthenticateAsync(scope.ServiceProvider, token);
             var companyName = ReadText("اسم التاجر أو المنشأة: ");
-            var branchName = ReadText("اسم الفرع المحلي لهذه القاعدة: ");
+            var branchName = ReadText("اسم الفرع الأول للمنشأة: ");
             await scope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(owner.UserId, companyName, branchName, token);
             Console.WriteLine("تم إعداد المنشأة والفرع لهذه القاعدة.");
+            break;
+        case "add-branch" when args.Length == 1:
+            var branchActor = await AuthenticateAsync(scope.ServiceProvider, token);
+            var newBranchName = ReadText("اسم الفرع الجديد للمنشأة: ");
+            var newBranchId = await scope.ServiceProvider.GetRequiredService<IBranchSetupService>()
+                .CreateAsync(branchActor.UserId, newBranchName, token);
+            Console.WriteLine($"تم إنشاء الفرع برقم {newBranchId}.");
             break;
         case "backup" when args.Length == 2:
             var backupActor = await AuthenticateAsync(scope.ServiceProvider, token);

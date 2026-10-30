@@ -6,6 +6,8 @@ using HisabTak.Domain.Setup;
 using HisabTak.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HisabTak.Infrastructure.Tests;
@@ -34,7 +36,7 @@ public sealed class SqlServerIntegrationTests
         Assert.Empty(await database.Users.ToListAsync());
         Assert.Empty(await database.Companies.ToListAsync());
         Assert.Empty(await database.Accounts.ToListAsync());
-        Assert.Equal(2, (await database.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(3, (await database.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     [SqlServerFact]
@@ -45,20 +47,29 @@ public sealed class SqlServerIntegrationTests
         database.Units.Add(new Unit("وحدة قبل الترقية"));
         database.AuditLogs.Add(new AuditLog(null, "TEST_CREATED", "Setup", null, "test"));
         await database.SaveChangesAsync();
+        await database.Database.ExecuteSqlRawAsync("INSERT dbo.Branches (BranchId,NameAr,IsActive,IsDeleted) VALUES (1,N'الفرع السابق',1,0)");
+        await database.Database.ExecuteSqlRawAsync("INSERT dbo.CompanyInfo (CompanyInfoId,BranchId,NameAr,IsActive,IsDeleted,UseImageInsteadOfText) VALUES (1,1,N'التاجر السابق',1,0,0)");
         await database.Database.MigrateAsync();
         Assert.True(await database.Units.AnyAsync(x => x.NameAr == "وحدة قبل الترقية"));
+        Assert.Equal("التاجر السابق", (await database.Companies.SingleAsync()).NameAr);
+        var branch = new Branch("فرع بعد الترقية");
+        database.Branches.Add(branch);
+        await database.SaveChangesAsync();
+        Assert.True(branch.Id > 1);
+        Assert.Equal(1, (await database.Companies.SingleAsync()).BranchId);
+        Assert.Equal("الفرع السابق", (await database.Branches.SingleAsync(x => x.Id == 1)).NameAr);
         await Assert.ThrowsAsync<SqlException>(() => database.Database.ExecuteSqlRawAsync("DELETE FROM dbo.AuditLogs"));
         Assert.Single(await database.AuditLogs.AsNoTracking().ToListAsync());
     }
 
     [SqlServerFact]
-    public async Task Sql_constraints_reject_duplicates_negative_rates_and_a_second_local_branch()
+    public async Task Sql_constraints_reject_duplicates_negative_rates_and_orphan_branches()
     {
         await using var test = await SqlTestDatabase.CreateAsync();
         await using var database = test.Context();
         await new ReferenceDataSeeder(database).SeedAsync();
         await Assert.ThrowsAsync<SqlException>(() => database.Database.ExecuteSqlRawAsync("UPDATE dbo.Currencies SET ExchangeRate = -1 WHERE Code = 'YER'"));
-        await Assert.ThrowsAsync<SqlException>(() => database.Database.ExecuteSqlRawAsync("INSERT dbo.Branches (BranchId,NameAr,IsActive,IsDeleted) VALUES (2,N'فرع ثان',1,0)"));
+        await Assert.ThrowsAsync<SqlException>(() => database.Database.ExecuteSqlRawAsync("INSERT dbo.Warehouses (BranchId,NameAr,IsActive,IsDeleted) VALUES (999999,N'مستودع بلا فرع',1,0)"));
         database.Currencies.Add(new Currency("YER", "مكرر", "ر"));
         await Assert.ThrowsAsync<DbUpdateException>(() => database.SaveChangesAsync());
         await using var verify = test.Context();
@@ -163,6 +174,107 @@ public sealed class SqlServerIntegrationTests
         var valid = validScope.ServiceProvider.GetRequiredService<ICompanySetupService>();
         await valid.InitializeAsync(owner, "تاجر مستقل", "الفرع المحلي");
         await Assert.ThrowsAsync<InvalidOperationException>(() => valid.InitializeAsync(owner, "تاجر آخر", "فرع آخر"));
+        await using var result = test.Context();
+        var branch = await result.Branches.SingleAsync();
+        Assert.Equal(branch.Id, (await result.Companies.SingleAsync()).BranchId);
+        Assert.Single(await result.AuditLogs.Where(x => x.OperationType == "COMPANY_INITIALIZED").ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Authorized_branch_setup_preserves_one_merchant_and_each_branch_reference()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        await using var services = test.Services();
+        await using var scope = services.CreateAsyncScope();
+        var setup = scope.ServiceProvider.GetRequiredService<IBranchSetupService>();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => setup.CreateAsync(owner, "قبل إعداد المنشأة"));
+        await scope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(owner, "تاجر واحد", "الفرع الأول");
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => setup.CreateAsync(0, "غير مصرح"));
+        await Assert.ThrowsAsync<ArgumentException>(() => setup.CreateAsync(owner, " "));
+        var secondId = await setup.CreateAsync(owner, "الفرع الثاني");
+        await using var verify = test.Context();
+        var company = await verify.Companies.SingleAsync();
+        Assert.NotEqual(company.BranchId, secondId);
+        verify.Warehouses.AddRange(new Warehouse("مخزن أول", company.BranchId), new Warehouse("مخزن ثان", secondId));
+        verify.Centers.AddRange(new Center("مركز أول", company.BranchId), new Center("مركز ثان", secondId));
+        await verify.SaveChangesAsync();
+        Assert.Equal(2, await verify.Branches.CountAsync());
+        Assert.Equal(new[] { "مخزن ثان" }, await verify.Warehouses.Where(x => x.BranchId == secondId).Select(x => x.NameAr).ToArrayAsync());
+        Assert.Equal(new[] { "مركز أول" }, await verify.Centers.Where(x => x.BranchId == company.BranchId).Select(x => x.NameAr).ToArrayAsync());
+        var audit = await verify.AuditLogs.SingleAsync(x => x.OperationType == "BRANCH_CREATED");
+        Assert.Equal(secondId, audit.RecordId);
+        Assert.Equal(owner, audit.UserId);
+        await Assert.ThrowsAsync<SqlException>(() => verify.Database.ExecuteSqlRawAsync(
+            "INSERT dbo.CompanyInfo (CompanyInfoId,BranchId,NameAr,IsActive,IsDeleted,UseImageInsteadOfText) VALUES (2,{0},N'تاجر ثان',1,0,0)", secondId));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_branch_creation_allocates_distinct_keys_and_audits_each_branch()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        await using var services = test.Services();
+        await using (var scope = services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(owner, "تاجر", "الفرع الأول");
+
+        async Task<int> CreateBranch(string name)
+        {
+            await using var scope = services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IBranchSetupService>().CreateAsync(owner, name);
+        }
+        var ids = await Task.WhenAll(CreateBranch("فرع ثان"), CreateBranch("فرع ثالث"));
+        Assert.Equal(2, ids.Distinct().Count());
+        await using var verify = test.Context();
+        Assert.Equal(3, await verify.Branches.CountAsync());
+        Assert.Single(await verify.Companies.ToListAsync());
+        Assert.Equal(ids.Select(id => (long)id).Order(), (await verify.AuditLogs.Where(x => x.OperationType == "BRANCH_CREATED")
+            .Select(x => x.RecordId!.Value).ToListAsync()).Order());
+    }
+
+    [SqlServerFact]
+    public async Task Branch_creation_rolls_back_when_audit_persistence_fails()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        await using var services = test.Services();
+        await using var scope = services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(owner, "تاجر", "الأول");
+        await using (var setup = test.Context())
+            await setup.Database.ExecuteSqlRawAsync("""
+                CREATE TRIGGER dbo.RejectTestBranchAudit ON dbo.AuditLogs AFTER INSERT AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    IF EXISTS (SELECT 1 FROM inserted WHERE OperationType = 'BRANCH_CREATED')
+                        THROW 51004, 'Test audit storage failure.', 1;
+                END;
+                """);
+        await Assert.ThrowsAsync<DbUpdateException>(() => scope.ServiceProvider.GetRequiredService<IBranchSetupService>().CreateAsync(owner, "يتراجع"));
+        await using var verify = test.Context();
+        Assert.Single(await verify.Branches.ToListAsync());
+        Assert.False(await verify.AuditLogs.AnyAsync(x => x.OperationType == "BRANCH_CREATED"));
+    }
+
+    [SqlServerFact]
+    public async Task Multi_branch_downgrade_preserves_data_and_refuses_to_discard_additional_branches()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        await using var services = test.Services();
+        await using var scope = services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(owner, "تاجر", "الأول");
+        await using var database = test.Context();
+        var migrator = database.GetService<IMigrator>();
+        // A single existing branch can return to the previous schema without data loss.
+        await migrator.MigrateAsync("20261029172557_ProtectAuditLedger");
+        Assert.Single(await database.Branches.AsNoTracking().ToListAsync());
+        await database.Database.MigrateAsync();
+        await scope.ServiceProvider.GetRequiredService<IBranchSetupService>().CreateAsync(owner, "الثاني");
+        var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync("20261029172557_ProtectAuditLedger"));
+        Assert.Equal(51002, error.Number);
+        Assert.Equal(2, await database.Branches.CountAsync());
+        Assert.Single(await database.Companies.ToListAsync());
+        Assert.Equal(3, (await database.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     [SqlServerFact]
@@ -170,11 +282,21 @@ public sealed class SqlServerIntegrationTests
     {
         await using var first = await SqlTestDatabase.CreateAsync();
         await using var second = await SqlTestDatabase.CreateAsync();
+        var firstOwner = await InitializeOwnerAsync(first);
+        var secondOwner = await InitializeOwnerAsync(second);
+        await using var firstServices = first.Services();
+        await using var secondServices = second.Services();
+        await using var firstScope = firstServices.CreateAsyncScope();
+        await using var secondScope = secondServices.CreateAsyncScope();
+        await firstScope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(firstOwner, "التاجر الأول", "الأول");
+        await firstScope.ServiceProvider.GetRequiredService<IBranchSetupService>().CreateAsync(firstOwner, "فرع إضافي للأول");
+        await secondScope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(secondOwner, "التاجر الثاني", "الأول");
         await using var one = first.Context();
         await using var two = second.Context();
-        one.Units.Add(new Unit("خاص بالتاجر الأول"));
-        await one.SaveChangesAsync();
-        Assert.False(await two.Units.AnyAsync());
+        Assert.Equal("التاجر الأول", (await one.Companies.SingleAsync()).NameAr);
+        Assert.Equal("التاجر الثاني", (await two.Companies.SingleAsync()).NameAr);
+        Assert.Equal(2, await one.Branches.CountAsync());
+        Assert.Single(await two.Branches.ToListAsync());
         Assert.NotEqual(first.Name, second.Name);
         Assert.NotEqual(one.Database.GetConnectionString(), two.Database.GetConnectionString());
     }

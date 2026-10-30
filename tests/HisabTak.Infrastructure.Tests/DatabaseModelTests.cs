@@ -3,6 +3,8 @@ using HisabTak.Domain.Setup;
 using HisabTak.Infrastructure.Persistence;
 using HisabTak.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HisabTak.Infrastructure.Tests;
@@ -29,6 +31,20 @@ public sealed class DatabaseModelTests
     {
         using var database = ModelContext();
         Assert.False(database.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Merchant_is_singleton_but_branch_keys_are_generated_without_a_single_branch_constraint()
+    {
+        using var database = ModelContext();
+        var model = database.GetService<IDesignTimeModel>().Model;
+        var branch = model.FindEntityType(typeof(Branch))!;
+        Assert.Equal(ValueGenerated.OnAdd, branch.FindProperty(nameof(Branch.Id))!.ValueGenerated);
+        Assert.Equal("NEXT VALUE FOR [dbo].[BranchNumbers]", branch.FindProperty(nameof(Branch.Id))!.GetDefaultValueSql());
+        Assert.DoesNotContain(branch.GetCheckConstraints(), constraint => constraint.Name == "CK_Branches_LocalBranch");
+        var company = model.FindEntityType(typeof(CompanyInfo))!;
+        Assert.Equal("[CompanyInfoId] = 1", company.GetCheckConstraints().Single(x => x.Name == "CK_CompanyInfo_Singleton").Sql);
+        Assert.Contains(company.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(Branch));
     }
 
     [Theory]

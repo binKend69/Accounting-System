@@ -48,8 +48,9 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         });
 
         var branch = Reference<Branch>(model, "Branches", "BranchId", 100);
-        branch.Property(x => x.Id).ValueGeneratedNever();
-        branch.ToTable("Branches", t => t.HasCheckConstraint("CK_Branches_LocalBranch", "[BranchId] = 1"));
+        // A sequence upgrades the existing non-IDENTITY key without rebuilding the table.
+        model.HasSequence<int>("BranchNumbers", "dbo");
+        branch.Property(x => x.Id).ValueGeneratedOnAdd().HasDefaultValueSql("NEXT VALUE FOR [dbo].[BranchNumbers]");
         Reference<Center>(model, "Centers", "CenterId", 100);
         Reference<Warehouse>(model, "Warehouses", "WarehouseId", 100);
         Reference<Unit>(model, "Units", "UnitId", 50);
@@ -65,7 +66,7 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         company.HasIndex(x => x.BranchId).IsUnique();
         company.ToTable("CompanyInfo", t =>
         {
-            t.HasCheckConstraint("CK_CompanyInfo_Singleton", "[CompanyInfoId] = 1 AND [BranchId] = 1");
+            t.HasCheckConstraint("CK_CompanyInfo_Singleton", "[CompanyInfoId] = 1");
             t.HasCheckConstraint("CK_CompanyInfo_Costing", "[CostingMethod] IS NULL OR [CostingMethod] IN (1,2)");
         });
         company.Property(x => x.NameEn).HasMaxLength(200);
@@ -213,7 +214,7 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
             if (entry.State == EntityState.Added)
             {
                 entry.Property(nameof(ReferenceEntity.CreatedAt)).CurrentValue = now;
-                if (entry.Entity is Branch or CompanyInfo) entry.Property(nameof(ReferenceEntity.Id)).CurrentValue = 1;
+                if (entry.Entity is CompanyInfo) entry.Property(nameof(ReferenceEntity.Id)).CurrentValue = 1;
             }
             if (entry.State == EntityState.Modified)
             {
