@@ -68,6 +68,41 @@ public sealed class FiscalPeriod : ReferenceEntity
     public bool IsClosed { get; private set; }
     public DateTime? ClosedAt { get; private set; }
     public int? ClosedByUserId { get; private set; }
+
+    public bool Contains(DateOnly date) => date >= StartDate && date <= EndDate;
+
+    public void EnsurePostingAllowed(DateOnly date)
+    {
+        EnsureActive();
+        if (IsClosed) throw new InvalidOperationException("Posting to a closed fiscal period is not allowed.");
+        if (!Contains(date)) throw new InvalidOperationException("Posting date is outside the fiscal period.");
+    }
+
+    public void Close(int actorId, DateTime utcNow)
+    {
+        EnsureActive();
+        if (actorId <= 0) throw new ArgumentOutOfRangeException(nameof(actorId));
+        if (utcNow.Kind != DateTimeKind.Utc) throw new ArgumentException("UTC time is required.", nameof(utcNow));
+        if (IsClosed) throw new InvalidOperationException("Fiscal period is already closed.");
+        IsClosed = true;
+        ClosedAt = utcNow;
+        ClosedByUserId = actorId;
+    }
+
+    // Authorization and the append-only audit record are enforced by the application service.
+    public void Reopen()
+    {
+        EnsureActive();
+        if (!IsClosed) throw new InvalidOperationException("Fiscal period is already open.");
+        IsClosed = false;
+        ClosedAt = null;
+        ClosedByUserId = null;
+    }
+
+    private void EnsureActive()
+    {
+        if (!IsActive || IsDeleted) throw new InvalidOperationException("Fiscal period is unavailable.");
+    }
 }
 
 public sealed class DocumentType : ReferenceEntity

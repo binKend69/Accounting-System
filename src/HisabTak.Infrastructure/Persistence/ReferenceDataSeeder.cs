@@ -81,6 +81,7 @@ public sealed class ReferenceDataSeeder(HisabTakDbContext database)
         ("SETUP", "الإعداد", [(PermissionCodes.SetupManage, "إدارة الإعداد")]),
         ("SECURITY", "المستخدمون", [(PermissionCodes.UsersManage, "إدارة المستخدمين")]),
         ("AUDIT", "التدقيق", [(PermissionCodes.AuditRead, "عرض التدقيق")]),
+        ("ACCOUNTING", "المحاسبة", [(PermissionCodes.PeriodClose, "إقفال الفترة المالية"), (PermissionCodes.PeriodReopen, "إعادة فتح الفترة المالية")]),
         ("BACKUP", "النسخ والاستعادة", [(PermissionCodes.BackupCreate, "إنشاء نسخة"), (PermissionCodes.BackupRestore, "استعادة إلى قاعدة جديدة")])
     ];
 }

@@ -360,6 +360,8 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
 
                     b.ToTable("FiscalPeriods", null, t =>
                         {
+                            t.HasCheckConstraint("CK_FiscalPeriods_Closure", "([IsClosed] = 0 AND [ClosedAt] IS NULL AND [ClosedByUserId] IS NULL) OR ([IsClosed] = 1 AND [ClosedAt] IS NOT NULL AND [ClosedByUserId] IS NOT NULL)");
+
                             t.HasCheckConstraint("CK_FiscalPeriods_Dates", "[StartDate] <= [EndDate]");
                         });
                 });

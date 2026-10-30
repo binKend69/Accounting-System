@@ -1,4 +1,5 @@
 using HisabTak.Application.Security;
+using HisabTak.Application.Accounting;
 using HisabTak.Application.Setup;
 using HisabTak.Application.Backup;
 using HisabTak.Infrastructure.Backup;
@@ -30,6 +31,7 @@ public static class DatabaseRegistration
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddScoped<ICompanySetupService, CompanySetupService>();
         services.AddScoped<IBranchSetupService, BranchSetupService>();
+        services.AddScoped<IFiscalPeriodService, FiscalPeriodService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

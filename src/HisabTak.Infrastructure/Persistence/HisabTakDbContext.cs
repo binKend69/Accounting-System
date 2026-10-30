@@ -125,7 +125,11 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         Foreign<Account, Branch>(model, nameof(Account.BranchId));
 
         var period = Reference<FiscalPeriod>(model, "FiscalPeriods", "FiscalPeriodId", 50);
-        period.ToTable("FiscalPeriods", t => t.HasCheckConstraint("CK_FiscalPeriods_Dates", "[StartDate] <= [EndDate]"));
+        period.ToTable("FiscalPeriods", t =>
+        {
+            t.HasCheckConstraint("CK_FiscalPeriods_Dates", "[StartDate] <= [EndDate]");
+            t.HasCheckConstraint("CK_FiscalPeriods_Closure", "([IsClosed] = 0 AND [ClosedAt] IS NULL AND [ClosedByUserId] IS NULL) OR ([IsClosed] = 1 AND [ClosedAt] IS NOT NULL AND [ClosedByUserId] IS NOT NULL)");
+        });
         Foreign<FiscalPeriod, User>(model, nameof(FiscalPeriod.ClosedByUserId));
         var document = Reference<DocumentType>(model, "DocumentTypes", "DocumentTypeId", 100);
         document.Property(x => x.Code).HasMaxLength(30).IsRequired();

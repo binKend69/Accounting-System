@@ -108,4 +108,6 @@ public static class PermissionCodes
     public const string AuditRead = "AUDIT.VIEW";
     public const string BackupCreate = "BACKUP.CREATE";
     public const string BackupRestore = "BACKUP.RESTORE";
+    public const string PeriodClose = "ACCOUNTING.PERIOD.CLOSE";
+    public const string PeriodReopen = "ACCOUNTING.PERIOD.REOPEN";
 }

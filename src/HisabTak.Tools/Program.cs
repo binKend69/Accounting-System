@@ -1,4 +1,5 @@
 using HisabTak.Application.Backup;
+using HisabTak.Application.Accounting;
 using HisabTak.Application.Security;
 using HisabTak.Application.Setup;
 using HisabTak.Infrastructure.Persistence;
@@ -13,6 +14,7 @@ if (args.Length == 0 || args[0] is "--help" or "help")
     Console.WriteLine("HisabTak database administration (explicit database connection required).");
     Console.WriteLine("probe | migrate [new-server-backup-path] | seed | init-owner | init-company | add-branch | backup <server-path> | restore-new <server-backup> <new-database> <server-data-directory>");
     Console.WriteLine("Set HISABTAK_Database__ConnectionString securely; passwords are prompted, never command-line arguments.");
+    Console.WriteLine("period-close <period-id> | period-reopen <period-id> (separate accounting permissions required)");
     return 0;
 }
 
@@ -79,6 +81,15 @@ try
             var newBranchId = await scope.ServiceProvider.GetRequiredService<IBranchSetupService>()
                 .CreateAsync(branchActor.UserId, newBranchName, token);
             Console.WriteLine($"تم إنشاء الفرع برقم {newBranchId}.");
+            break;
+        case "period-close" or "period-reopen" when args.Length == 2:
+            if (!int.TryParse(args[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var periodId) || periodId <= 0)
+                throw new ArgumentException("A positive fiscal period ID is required.");
+            var periodActor = await AuthenticateAsync(scope.ServiceProvider, token);
+            var periods = scope.ServiceProvider.GetRequiredService<IFiscalPeriodService>();
+            if (args[0] == "period-close") await periods.CloseAsync(periodActor.UserId, periodId, token);
+            else await periods.ReopenAsync(periodActor.UserId, periodId, token);
+            Console.WriteLine("تم حفظ حالة الفترة وتدقيق العملية.");
             break;
         case "backup" when args.Length == 2:
             var backupActor = await AuthenticateAsync(scope.ServiceProvider, token);

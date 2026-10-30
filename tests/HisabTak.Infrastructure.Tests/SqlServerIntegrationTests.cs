@@ -1,7 +1,9 @@
 using HisabTak.Application.Backup;
+using HisabTak.Application.Accounting;
 using HisabTak.Application.Security;
 using HisabTak.Application.Setup;
 using HisabTak.Domain.Security;
+using HisabTak.Domain.Accounting;
 using HisabTak.Domain.Setup;
 using HisabTak.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
@@ -36,7 +38,7 @@ public sealed class SqlServerIntegrationTests
         Assert.Empty(await database.Users.ToListAsync());
         Assert.Empty(await database.Companies.ToListAsync());
         Assert.Empty(await database.Accounts.ToListAsync());
-        Assert.Equal(3, (await database.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(4, (await database.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     [SqlServerFact]
@@ -45,12 +47,14 @@ public sealed class SqlServerIntegrationTests
         await using var test = await SqlTestDatabase.CreateAsync("20261029172256_InitialReferenceData");
         await using var database = test.Context();
         database.Units.Add(new Unit("وحدة قبل الترقية"));
+        database.FiscalPeriods.Add(new FiscalPeriod("فترة قبل الترقية", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
         database.AuditLogs.Add(new AuditLog(null, "TEST_CREATED", "Setup", null, "test"));
         await database.SaveChangesAsync();
         await database.Database.ExecuteSqlRawAsync("INSERT dbo.Branches (BranchId,NameAr,IsActive,IsDeleted) VALUES (1,N'الفرع السابق',1,0)");
         await database.Database.ExecuteSqlRawAsync("INSERT dbo.CompanyInfo (CompanyInfoId,BranchId,NameAr,IsActive,IsDeleted,UseImageInsteadOfText) VALUES (1,1,N'التاجر السابق',1,0,0)");
         await database.Database.MigrateAsync();
         Assert.True(await database.Units.AnyAsync(x => x.NameAr == "وحدة قبل الترقية"));
+        Assert.False((await database.FiscalPeriods.SingleAsync()).IsClosed);
         Assert.Equal("التاجر السابق", (await database.Companies.SingleAsync()).NameAr);
         var branch = new Branch("فرع بعد الترقية");
         database.Branches.Add(branch);
@@ -265,11 +269,13 @@ public sealed class SqlServerIntegrationTests
         await scope.ServiceProvider.GetRequiredService<ICompanySetupService>().InitializeAsync(owner, "تاجر", "الأول");
         await using var database = test.Context();
         var migrator = database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20261030060503_SupportMerchantBranches");
         // A single existing branch can return to the previous schema without data loss.
         await migrator.MigrateAsync("20261029172557_ProtectAuditLedger");
         Assert.Single(await database.Branches.AsNoTracking().ToListAsync());
         await database.Database.MigrateAsync();
         await scope.ServiceProvider.GetRequiredService<IBranchSetupService>().CreateAsync(owner, "الثاني");
+        await migrator.MigrateAsync("20261030060503_SupportMerchantBranches");
         var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync("20261029172557_ProtectAuditLedger"));
         Assert.Equal(51002, error.Number);
         Assert.Equal(2, await database.Branches.CountAsync());
@@ -343,6 +349,119 @@ public sealed class SqlServerIntegrationTests
         await using var original = test.Context();
         Assert.NotNull(await original.CustomSettings.FindAsync("Backup.LastSuccessfulUtc"));
         Assert.True(await original.AuditLogs.AnyAsync(x => x.OperationType == "BACKUP_CREATED"));
+    }
+
+    [SqlServerFact]
+    public async Task Period_close_and_reopen_require_distinct_permissions_and_persist_audit()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        int periodId, clerkId;
+        await using (var setup = test.Context())
+        {
+            var period = new FiscalPeriod("سنة", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+            var clerk = new User("period-clerk", new HisabTak.Infrastructure.Security.BCryptPasswordHasher().Hash("Test-" + Guid.NewGuid().ToString("N")));
+            setup.FiscalPeriods.Add(period);
+            setup.Users.Add(clerk);
+            await setup.SaveChangesAsync();
+            periodId = period.Id;
+            clerkId = clerk.Id;
+            await Assert.ThrowsAsync<SqlException>(() => setup.Database.ExecuteSqlRawAsync("UPDATE dbo.FiscalPeriods SET IsClosed = 1 WHERE FiscalPeriodId = {0}", periodId));
+        }
+        await using var services = test.Services();
+        async Task Change(int actor, bool close)
+        {
+            await using var scope = services.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<IFiscalPeriodService>();
+            if (close) await service.CloseAsync(actor, periodId);
+            else await service.ReopenAsync(actor, periodId);
+        }
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Change(clerkId, true));
+        await using (var grant = test.Context())
+        {
+            var close = await grant.Permissions.SingleAsync(x => x.Code == PermissionCodes.PeriodClose);
+            grant.UserPermissions.Add(new UserPermission(clerkId, close.Id));
+            await grant.SaveChangesAsync();
+        }
+        await Change(clerkId, true);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Change(clerkId, false));
+        await using (var closed = test.Context())
+        {
+            var period = await closed.FiscalPeriods.SingleAsync();
+            Assert.True(period.IsClosed);
+            Assert.Equal(clerkId, period.ClosedByUserId);
+            Assert.Throws<InvalidOperationException>(() => period.EnsurePostingAllowed(new DateOnly(2026, 5, 1)));
+        }
+        await Change(owner, false);
+        await using var verify = test.Context();
+        var reopened = await verify.FiscalPeriods.SingleAsync();
+        reopened.EnsurePostingAllowed(new DateOnly(2026, 5, 1));
+        Assert.Null(reopened.ClosedAt);
+        var audit = await verify.AuditLogs.Where(x => x.DocumentTypeCode == "FiscalPeriods").OrderBy(x => x.AuditLogId).ToListAsync();
+        Assert.Equal(new[] { "FISCAL_PERIOD_CLOSED", "FISCAL_PERIOD_REOPENED" }, audit.Select(x => x.OperationType));
+        Assert.Equal(clerkId, audit[0].UserId);
+        Assert.Equal(owner, audit[1].UserId);
+        Assert.All(audit, item => Assert.Equal((long)periodId, item.RecordId));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_period_closures_commit_once_and_keep_the_audit_consistent()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        int periodId;
+        await using (var setup = test.Context())
+        {
+            var period = new FiscalPeriod("سنة", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+            setup.FiscalPeriods.Add(period);
+            await setup.SaveChangesAsync();
+            periodId = period.Id;
+        }
+        await using var services = test.Services();
+        async Task<bool> Attempt()
+        {
+            await using var scope = services.CreateAsyncScope();
+            try { await scope.ServiceProvider.GetRequiredService<IFiscalPeriodService>().CloseAsync(owner, periodId); return true; }
+            catch (InvalidOperationException) { return false; }
+        }
+        Assert.Single(await Task.WhenAll(Attempt(), Attempt()), result => result);
+        await using var verify = test.Context();
+        Assert.True((await verify.FiscalPeriods.SingleAsync()).IsClosed);
+        Assert.Single(await verify.AuditLogs.Where(x => x.OperationType == "FISCAL_PERIOD_CLOSED").ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Period_reopen_rolls_back_when_its_audit_cannot_be_saved()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var owner = await InitializeOwnerAsync(test);
+        int periodId;
+        await using (var setup = test.Context())
+        {
+            var period = new FiscalPeriod("سنة", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+            setup.FiscalPeriods.Add(period);
+            await setup.SaveChangesAsync();
+            periodId = period.Id;
+        }
+        await using var services = test.Services();
+        await using (var scope = services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<IFiscalPeriodService>().CloseAsync(owner, periodId);
+        await using (var setup = test.Context())
+            await setup.Database.ExecuteSqlRawAsync("""
+                CREATE TRIGGER dbo.RejectTestPeriodReopen ON dbo.AuditLogs AFTER INSERT AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    IF EXISTS (SELECT 1 FROM inserted WHERE OperationType = 'FISCAL_PERIOD_REOPENED')
+                        THROW 51005, 'Test period audit storage failure.', 1;
+                END;
+                """);
+        await using (var scope = services.CreateAsyncScope())
+            await Assert.ThrowsAsync<DbUpdateException>(() => scope.ServiceProvider.GetRequiredService<IFiscalPeriodService>().ReopenAsync(owner, periodId));
+        await using var verify = test.Context();
+        var stillClosed = await verify.FiscalPeriods.SingleAsync();
+        Assert.True(stillClosed.IsClosed);
+        Assert.Equal(owner, stillClosed.ClosedByUserId);
+        Assert.False(await verify.AuditLogs.AnyAsync(x => x.OperationType == "FISCAL_PERIOD_REOPENED"));
     }
 
     private static async Task<int> InitializeOwnerAsync(SqlTestDatabase test)
