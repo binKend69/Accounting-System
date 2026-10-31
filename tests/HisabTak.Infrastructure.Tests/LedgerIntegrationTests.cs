@@ -45,6 +45,8 @@ public sealed class LedgerIntegrationTests
         var debit = await chart.CreateAccountAsync(owner, "009001", "Debit", group, currency, 1, branch);
         var credit = await chart.CreateAccountAsync(owner, "009002", "Credit", group, currency, 2, branch);
         await scope.ServiceProvider.GetRequiredService<IJournalService>().SetBaseCurrencyAsync(owner, currency);
+        var rounding = await chart.CreateAccountAsync(owner, "009099", "Rounding", group, currency, 1, branch);
+        await scope.ServiceProvider.GetRequiredService<IJournalService>().ConfigureRoundingAsync(owner, branch, rounding, 2);
         return new(owner, branch, currency, otherCurrency, group, debit, credit, period.Id);
     }
 
@@ -308,6 +310,41 @@ public sealed class LedgerIntegrationTests
         await Assert.ThrowsAsync<DbUpdateException>(() => With<IChartOfAccountsService, int>(test, s => s.CreateGroupAsync(f.Owner, "0099", "Rollback", f.Group)));
         await using var verify = test.Context();
         Assert.False(await verify.AccountMainGroups.AnyAsync(x => x.Code == "0099"));
+    }
+
+    [SqlServerFact]
+    public async Task Rounded_journal_preserves_exact_values_and_reverses_historical_rounding_after_configuration_change()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var foreign = await With<IChartOfAccountsService, int>(test, s => s.CreateAccountAsync(f.Owner, "009003", "Foreign", f.Group, f.OtherCurrency, 1, f.Branch));
+        var draft = JournalDraft.Create(f.Branch, new("proposal", Date, Date), Date, Guid.NewGuid(), [
+            new(foreign, JournalSide.Debit, new(new(0.01m, f.OtherCurrency), f.Currency, 1.5m, Date)),
+            new(foreign, JournalSide.Debit, new(new(0.01m, f.OtherCurrency), f.Currency, 1.5m, Date)),
+            new(f.Credit, JournalSide.Credit, new(new(0.03m, f.Currency), f.Currency, 1m, Date))]);
+        var id = await Post(test, f, draft);
+        var stored = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, id));
+        Assert.Equal(2, stored.RoundingPrecision); Assert.Equal(4, stored.Lines.Count);
+        Assert.Equal(0.015m, stored.Lines[0].BaseAmount); Assert.Equal(0.02m, stored.Lines[0].BookBaseAmount);
+        Assert.Equal(0.01m, Assert.Single(stored.Lines.Where(l => l.IsRounding)).BookBaseAmount);
+        var replacement = await With<IChartOfAccountsService, int>(test, s => s.CreateAccountAsync(f.Owner, "009098", "New rounding", f.Group, f.Currency, 1, f.Branch));
+        await Change<IJournalService>(test, s => s.ConfigureRoundingAsync(f.Owner, f.Branch, replacement, 2));
+        Assert.Equal(id, await Post(test, f, draft));
+        var reversedId = await With<IJournalService, long>(test, s => s.ReverseAsync(f.Owner, id, Date.AddDays(1), Guid.NewGuid()));
+        var reversed = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, reversedId));
+        Assert.Equal(stored.Lines.Select(x => x.BookBaseAmount), reversed.Lines.Select(x => x.BookBaseAmount));
+        Assert.Equal(stored.Lines.Select(x => x.AccountId), reversed.Lines.Select(x => x.AccountId));
+        Assert.All(await With<IJournalService, IReadOnlyList<LedgerBalance>>(test, s => s.BalancesAsync(f.Owner, f.Branch, f.Currency, Date.AddDays(1))),
+            b => Assert.Equal(b.BaseDebit, b.BaseCredit));
+    }
+
+    [SqlServerFact]
+    public async Task Missing_rounding_setup_and_inactive_difference_account_cannot_post()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("DELETE dbo.LedgerRoundingSettings");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Post(test, f, f.Draft()));
+        Assert.Equal(0, await Count(test, "JournalEntries"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Change<IJournalService>(test, s => s.ConfigureRoundingAsync(f.Owner, f.Branch, f.Debit, 3)));
     }
 
 }

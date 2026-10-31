@@ -14,6 +14,34 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
 {
     private readonly SqlLedger sql = new(db);
 
+    public async Task ConfigureRoundingAsync(int actorId, int branchId, int accountId, int precision, CancellationToken cancellationToken = default)
+    {
+        if (precision is < 0 or > 8) throw new ArgumentOutOfRangeException(nameof(precision));
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await DatabaseLock.AcquireAsync(db, "HisabTak.Accounting.Periods", cancellationToken);
+        await authorization.DemandAsync(actorId, PermissionCodes.SetupManage, cancellationToken);
+        await AccountingAccess.BranchAsync(db, authorization, actorId, branchId, cancellationToken);
+        var company = await db.Companies.AsNoTracking().SingleAsync(x => x.IsActive, cancellationToken);
+        if (company.BaseCurrencyId is not int baseId) throw new InvalidOperationException("Choose the base currency first.");
+        var currency = await db.Currencies.AsNoTracking().SingleAsync(x => x.Id == baseId && x.IsActive, cancellationToken);
+        if (new[] { "YER", "SAR", "USD" }.Contains(currency.Code) && precision != 2)
+            throw new InvalidOperationException("Initial currencies use the approved two decimal places.");
+        var account = await db.Accounts.AsNoTracking().SingleAsync(x => x.Id == accountId, cancellationToken);
+        account.EnsurePostingAllowed(baseId);
+        if (account.BranchId != branchId) throw new InvalidOperationException("Rounding account must belong to the branch.");
+        if (await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalLines WHERE AccountId=@id AND IsRounding=0", cancellationToken, ("@id", accountId)) > 0)
+            throw new InvalidOperationException("Choose a dedicated rounding account with no ordinary history.");
+        if (await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalEntries WHERE RoundingPrecision IS NOT NULL AND RoundingPrecision<>@precision", cancellationToken, ("@precision", precision)) > 0)
+            throw new InvalidOperationException("Posting precision is fixed after use.");
+        await sql.ExecuteAsync("""
+            UPDATE dbo.LedgerRoundingSettings SET AccountId=@account,Precision=@precision,BaseCurrencyId=@base WHERE BranchId=@branch;
+            IF @@ROWCOUNT=0 INSERT dbo.LedgerRoundingSettings(BranchId,AccountId,Precision,BaseCurrencyId) VALUES(@branch,@account,@precision,@base);
+            """, cancellationToken, ("@branch", branchId), ("@account", accountId), ("@precision", precision), ("@base", baseId));
+        db.AuditLogs.Add(new AuditLog(actorId, "ROUNDING_CONFIGURED", "Branches", branchId, Environment.MachineName));
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
     public async Task SetBaseCurrencyAsync(int actorId, int currencyId, CancellationToken cancellationToken = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -53,17 +81,17 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         await AccountingAccess.BranchAsync(db, authorization, actorId, original.BranchId, cancellationToken);
         if (original.Kind == JournalKind.Reversal) throw new InvalidOperationException("A reversal cannot itself be reversed.");
         var originalPeriod = new FiscalPeriod("snapshot", original.EntryDate, original.EntryDate);
-        var lines = original.Lines.Select(l => new JournalLineDefinition(l.AccountId, l.Side,
+        var lines = original.Lines.Where(l => !l.IsRounding).Select(l => new JournalLineDefinition(l.AccountId, l.Side,
             new BaseCurrencyValuation(new CurrencyAmount(l.Amount,l.CurrencyId),l.BaseCurrencyId,l.RateToBase,l.ValuationDate)));
         var proposal = JournalDraft.Create(original.BranchId, originalPeriod, original.EntryDate, original.SourceKey, lines);
         // The real persisted target period is reloaded and checked inside WriteAsync.
         var reversal = proposal.Reverse(originalId, new FiscalPeriod("target", date, date), date, sourceKey);
-        var id = await WriteAsync(actorId, reversal, cancellationToken);
+        var id = await WriteAsync(actorId, reversal, cancellationToken, original);
         await tx.CommitAsync(cancellationToken);
         return id;
     }
 
-    private async Task<long> WriteAsync(int actorId, JournalDraft draft, CancellationToken ct)
+    private async Task<long> WriteAsync(int actorId, JournalDraft draft, CancellationToken ct, PostedJournal? original = null)
     {
         await AccountingAccess.BranchAsync(db, authorization, actorId, draft.BranchId, ct);
         // Decimal scale is not business content: 100 and 100.00 are the same retry.
@@ -98,8 +126,29 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         if (!await db.Currencies.AsNoTracking().AnyAsync(x => x.Id==baseId && x.IsActive, ct)) throw new InvalidOperationException("Base currency is unavailable.");
         if (draft.ReversesEntryId is long originalId && await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalEntries WHERE ReversesEntryId=@original",ct,("@original",originalId))>0)
             throw new InvalidOperationException("Journal has already been reversed.");
-        foreach (var line in draft.Lines)
+        int? precision = original?.RoundingPrecision;
+        IReadOnlyList<RoundedLedgerLine> postingLines;
+        if (original is not null)
+            postingLines = original.Lines.Select(l => new RoundedLedgerLine(new(l.AccountId,
+                l.Side == JournalSide.Debit ? JournalSide.Credit : JournalSide.Debit,
+                new(new(l.Amount, l.CurrencyId), l.BaseCurrencyId, l.RateToBase, l.ValuationDate)),
+                l.BookBaseAmount ?? l.BaseAmount, l.IsRounding)).ToArray();
+        else
         {
+            await using var settings = await sql.CommandAsync("SELECT AccountId,Precision FROM dbo.LedgerRoundingSettings WHERE BranchId=@branch AND BaseCurrencyId=@base", ct,
+                ("@branch", draft.BranchId), ("@base", baseId));
+            int accountId;
+            await using (var reader = await settings.ExecuteReaderAsync(ct))
+            {
+                if (!await reader.ReadAsync(ct)) throw new InvalidOperationException("Configure an explicit rounding account and precision before posting.");
+                accountId = reader.GetInt32(0); precision = reader.GetInt32(1);
+            }
+            postingLines = LedgerRounding.Calculate(draft, precision.Value, accountId);
+        }
+        foreach (var postingLine in postingLines)
+        {
+            var line = postingLine.Source;
+            RequireStorage(postingLine.BookBaseAmount, 8, 20);
             var account=await db.Accounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id==line.AccountId,ct)
                 ?? throw new InvalidOperationException("Account is unavailable.");
             account.EnsurePostingAllowed(line.Valuation.Original.CurrencyId);
@@ -113,21 +162,24 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
             RequireStorage(line.Valuation.ExactBaseAmount.Amount,8,20);
         }
         var id=await sql.ScalarAsync("""
-            INSERT dbo.JournalEntries(SourceKey,ContentHash,BranchId,FiscalPeriodId,EntryDate,Kind,ReversesEntryId,CreatedBy)
-            VALUES(@source,@hash,@branch,@period,@date,@kind,@original,@actor);
+            INSERT dbo.JournalEntries(SourceKey,ContentHash,BranchId,FiscalPeriodId,EntryDate,Kind,ReversesEntryId,CreatedBy,RoundingPrecision)
+            VALUES(@source,@hash,@branch,@period,@date,@kind,@original,@actor,@precision);
             SELECT CAST(SCOPE_IDENTITY() AS bigint);
             """,ct,("@source",draft.SourceKey),("@hash",hash),("@branch",draft.BranchId),("@period",period.Id),("@date",draft.EntryDate),
-            ("@kind",(int)draft.Kind),("@original",draft.ReversesEntryId),("@actor",actorId));
+            ("@kind",(int)draft.Kind),("@original",draft.ReversesEntryId),("@actor",actorId),("@precision",precision));
         var number=0;
-        foreach(var line in draft.Lines)
+        foreach(var postingLine in postingLines)
+        {
+            var line = postingLine.Source;
             await sql.ExecuteAsync("""
-                INSERT dbo.JournalLines(JournalEntryId,LineNumber,AccountId,Side,Amount,CurrencyId,RateToBase,BaseAmount,BaseCurrencyId,ValuationDate)
-                VALUES(@id,@number,@account,@side,@amount,@currency,@rate,@base,@baseCurrency,@date)
+                INSERT dbo.JournalLines(JournalEntryId,LineNumber,AccountId,Side,Amount,CurrencyId,RateToBase,BaseAmount,BaseCurrencyId,ValuationDate,BookBaseAmount,IsRounding)
+                VALUES(@id,@number,@account,@side,@amount,@currency,@rate,@base,@baseCurrency,@date,@book,@rounding)
                 """,ct,("@id",id),("@number",++number),("@account",line.AccountId),("@side",(int)line.Side),
                 ("@amount",line.Valuation.Original.Amount),("@currency",line.Valuation.Original.CurrencyId),("@rate",line.Valuation.RateToBase),
-                ("@base",line.Valuation.ExactBaseAmount.Amount),("@baseCurrency",baseId),("@date",line.Valuation.OperationDate));
+                ("@base",line.Valuation.ExactBaseAmount.Amount),("@baseCurrency",baseId),("@date",line.Valuation.OperationDate),("@book",precision is null ? null : postingLine.BookBaseAmount),("@rounding",postingLine.IsRounding));
+        }
         if(draft.Kind==JournalKind.Opening)
-            await sql.ExecuteAsync("INSERT dbo.JournalOpeningAccounts(BranchId,AccountId,JournalEntryId) SELECT @branch,AccountId,@id FROM dbo.JournalLines WHERE JournalEntryId=@id GROUP BY AccountId",ct,("@branch",draft.BranchId),("@id",id));
+            await sql.ExecuteAsync("INSERT dbo.JournalOpeningAccounts(BranchId,AccountId,JournalEntryId) SELECT @branch,AccountId,@id FROM dbo.JournalLines WHERE JournalEntryId=@id AND IsRounding=0 GROUP BY AccountId",ct,("@branch",draft.BranchId),("@id",id));
         await sql.ExecuteAsync("UPDATE dbo.JournalEntries SET PostedAt=SYSUTCDATETIME() WHERE JournalEntryId=@id",ct,("@id",id));
         await AuditAsync(actorId,draft.Kind==JournalKind.Reversal?"JOURNAL_REVERSED":"JOURNAL_POSTED",id,ct);
         return id;
@@ -151,18 +203,18 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
 
     private async Task<PostedJournal> ReadAsync(long id,CancellationToken ct)
     {
-        Guid source; int branch,period; DateOnly date; JournalKind kind; long? original;
-        await using(var command=await sql.CommandAsync("SELECT SourceKey,BranchId,FiscalPeriodId,EntryDate,Kind,ReversesEntryId FROM dbo.JournalEntries WHERE JournalEntryId=@id AND PostedAt IS NOT NULL",ct,("@id",id)))
+        Guid source; int branch,period; DateOnly date; JournalKind kind; long? original; int? precision;
+        await using(var command=await sql.CommandAsync("SELECT SourceKey,BranchId,FiscalPeriodId,EntryDate,Kind,ReversesEntryId,RoundingPrecision FROM dbo.JournalEntries WHERE JournalEntryId=@id AND PostedAt IS NOT NULL",ct,("@id",id)))
         await using(var reader=await command.ExecuteReaderAsync(ct))
         {
             if(!await reader.ReadAsync(ct)) throw new InvalidOperationException("Posted journal was not found.");
-            source=reader.GetGuid(0);branch=reader.GetInt32(1);period=reader.GetInt32(2);date=DateOnly.FromDateTime(reader.GetDateTime(3));kind=(JournalKind)reader.GetInt32(4);original=reader.IsDBNull(5)?null:reader.GetInt64(5);
+            source=reader.GetGuid(0);branch=reader.GetInt32(1);period=reader.GetInt32(2);date=DateOnly.FromDateTime(reader.GetDateTime(3));kind=(JournalKind)reader.GetInt32(4);original=reader.IsDBNull(5)?null:reader.GetInt64(5);precision=reader.IsDBNull(6)?null:reader.GetInt32(6);
         }
         var lines=new List<LedgerLineSnapshot>();
-        await using(var command=await sql.CommandAsync("SELECT AccountId,Side,Amount,CurrencyId,RateToBase,BaseAmount,BaseCurrencyId,ValuationDate FROM dbo.JournalLines WHERE JournalEntryId=@id ORDER BY LineNumber",ct,("@id",id)))
+        await using(var command=await sql.CommandAsync("SELECT AccountId,Side,Amount,CurrencyId,RateToBase,BaseAmount,BaseCurrencyId,ValuationDate,BookBaseAmount,IsRounding FROM dbo.JournalLines WHERE JournalEntryId=@id ORDER BY LineNumber",ct,("@id",id)))
         await using(var reader=await command.ExecuteReaderAsync(ct))
-            while(await reader.ReadAsync(ct)) lines.Add(new(reader.GetInt32(0),(JournalSide)reader.GetInt32(1),reader.GetDecimal(2),reader.GetInt32(3),reader.GetDecimal(4),reader.GetDecimal(5),reader.GetInt32(6),DateOnly.FromDateTime(reader.GetDateTime(7))));
-        return new(id,source,branch,period,date,kind,original,lines.AsReadOnly());
+            while(await reader.ReadAsync(ct)) lines.Add(new(reader.GetInt32(0),(JournalSide)reader.GetInt32(1),reader.GetDecimal(2),reader.GetInt32(3),reader.GetDecimal(4),reader.GetDecimal(5),reader.GetInt32(6),DateOnly.FromDateTime(reader.GetDateTime(7)),reader.IsDBNull(8)?null:reader.GetDecimal(8),reader.GetBoolean(9)));
+        return new(id,source,branch,period,date,kind,original,lines.AsReadOnly(),precision);
     }
 
     public async Task<IReadOnlyList<LedgerBalance>> BalancesAsync(int actorId,int branchId,int currencyId,DateOnly asOf,CancellationToken cancellationToken=default)
@@ -173,7 +225,7 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         var rows=new List<LedgerBalance>();
         await using var command=await sql.CommandAsync("""
             SELECT l.AccountId,SUM(CASE WHEN Side=1 THEN Amount ELSE 0 END),SUM(CASE WHEN Side=2 THEN Amount ELSE 0 END),
-                SUM(CASE WHEN Side=1 THEN BaseAmount ELSE 0 END),SUM(CASE WHEN Side=2 THEN BaseAmount ELSE 0 END)
+                SUM(CASE WHEN Side=1 THEN COALESCE(BookBaseAmount,BaseAmount) ELSE 0 END),SUM(CASE WHEN Side=2 THEN COALESCE(BookBaseAmount,BaseAmount) ELSE 0 END)
             FROM dbo.JournalLines l JOIN dbo.JournalEntries e ON e.JournalEntryId=l.JournalEntryId
             WHERE e.PostedAt IS NOT NULL AND e.BranchId=@branch AND e.EntryDate<=@date AND l.CurrencyId=@currency
             GROUP BY l.AccountId ORDER BY l.AccountId

@@ -11,13 +11,14 @@ public interface IChartOfAccountsService
 }
 
 public sealed record LedgerLineSnapshot(int AccountId, JournalSide Side, decimal Amount, int CurrencyId,
-    decimal RateToBase, decimal BaseAmount, int BaseCurrencyId, DateOnly ValuationDate);
+    decimal RateToBase, decimal BaseAmount, int BaseCurrencyId, DateOnly ValuationDate, decimal? BookBaseAmount = null, bool IsRounding = false);
 public sealed record PostedJournal(long Id, Guid SourceKey, int BranchId, int PeriodId, DateOnly EntryDate,
-    JournalKind Kind, long? ReversesEntryId, IReadOnlyList<LedgerLineSnapshot> Lines);
+    JournalKind Kind, long? ReversesEntryId, IReadOnlyList<LedgerLineSnapshot> Lines, int? RoundingPrecision = null);
 public sealed record LedgerBalance(int AccountId, decimal Debit, decimal Credit, decimal BaseDebit, decimal BaseCredit);
 
 public interface IJournalService
 {
+    Task ConfigureRoundingAsync(int actorId, int branchId, int accountId, int precision, CancellationToken cancellationToken = default);
     Task SetBaseCurrencyAsync(int actorId, int currencyId, CancellationToken cancellationToken = default);
     Task<long> PostAsync(int actorId, JournalDraft draft, CancellationToken cancellationToken = default);
     Task<long> ReverseAsync(int actorId, long originalId, DateOnly date, Guid sourceKey, CancellationToken cancellationToken = default);
