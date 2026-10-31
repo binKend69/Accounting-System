@@ -7,6 +7,15 @@ namespace HisabTak.Infrastructure.Tests;
 [Trait("Category", "SqlServer")]
 public sealed class FiscalPeriodOverlapTests
 {
+    private static bool IsExpectedConflict(Exception exception)
+    {
+        // EF can wrap SQL deadlock 1205 in InvalidOperationException. A victim is
+        // rolled back; only that conflict or the explicit overlap rejection is expected.
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+            if (current is SqlException sql && sql.Number is 1205 or 51002) return true;
+        return false;
+    }
+
     [SqlServerFact]
     public async Task Overlap_is_rejected_but_adjacent_periods_are_allowed()
     {
@@ -49,7 +58,7 @@ public sealed class FiscalPeriodOverlapTests
             await using var db = test.Context();
             db.FiscalPeriods.Add(new FiscalPeriod(name, new(2026, 1, 1), new(2026, 12, 31)));
             try { await db.SaveChangesAsync(); return true; }
-            catch (DbUpdateException) { return false; }
+            catch (Exception exception) when (IsExpectedConflict(exception)) { return false; }
         }
         var results = await Task.WhenAll(Attempt("أولى"), Attempt("ثانية"));
         Assert.Single(results, x => x);
