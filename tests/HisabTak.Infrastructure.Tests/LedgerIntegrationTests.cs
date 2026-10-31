@@ -77,6 +77,7 @@ public sealed class LedgerIntegrationTests
         await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
         var draft = f.Draft(); var id = await Post(test, f, draft);
         Assert.Equal(id, await Post(test, f, draft));
+        Assert.Equal(id, await Post(test, f, f.Draft(draft.SourceKey, 100.000m)));
         await Assert.ThrowsAsync<InvalidOperationException>(() => Post(test, f, f.Draft(draft.SourceKey, 101m)));
         var stored = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, id));
         Assert.Equal(f.Period, stored.PeriodId); Assert.Equal(2, stored.Lines.Count);
@@ -155,7 +156,7 @@ public sealed class LedgerIntegrationTests
         await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); int clerkId;
         await using (var db = test.Context())
         {
-            var clerk = new User("clerk", "not-used-for-authentication"); db.Users.Add(clerk); await db.SaveChangesAsync(); clerkId = clerk.Id;
+            var clerk = new User("clerk", new HisabTak.Infrastructure.Security.BCryptPasswordHasher().Hash("Test-" + Guid.NewGuid().ToString("N"))); db.Users.Add(clerk); await db.SaveChangesAsync(); clerkId = clerk.Id;
             var permission = await db.Permissions.SingleAsync(x => x.Code == PermissionCodes.JournalPost);
             db.UserPermissions.Add(new UserPermission(clerkId, permission.Id)); await db.SaveChangesAsync();
         }

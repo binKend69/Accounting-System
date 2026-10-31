@@ -9,7 +9,8 @@ internal sealed class SqlLedger(HisabTakDbContext db)
 {
     public async Task<SqlCommand> CommandAsync(string sql, CancellationToken ct, params (string Name, object? Value)[] values)
     {
-        await db.Database.OpenConnectionAsync(ct);
+        if (db.Database.GetDbConnection().State != ConnectionState.Open)
+            await db.Database.OpenConnectionAsync(ct);
         var command = ((SqlConnection)db.Database.GetDbConnection()).CreateCommand();
         command.CommandText = sql;
         command.Transaction = (SqlTransaction?)db.Database.CurrentTransaction?.GetDbTransaction();

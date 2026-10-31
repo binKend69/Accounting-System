@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -65,13 +66,26 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
     private async Task<long> WriteAsync(int actorId, JournalDraft draft, CancellationToken ct)
     {
         await AccountingAccess.BranchAsync(db, authorization, actorId, draft.BranchId, ct);
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(draft))));
+        // Decimal scale is not business content: 100 and 100.00 are the same retry.
+        static string Number(decimal value) => value.ToString("G29", CultureInfo.InvariantCulture);
+        var content = new
+        {
+            draft.Kind, draft.BranchId, draft.EntryDate, draft.SourceKey, draft.ReversesEntryId,
+            Lines = draft.Lines.Select(l => new
+            {
+                l.AccountId, l.Side, Amount = Number(l.Valuation.Original.Amount), l.Valuation.Original.CurrencyId,
+                Rate = Number(l.Valuation.RateToBase), BaseAmount = Number(l.Valuation.ExactBaseAmount.Amount),
+                BaseCurrencyId = l.Valuation.ExactBaseAmount.CurrencyId, l.Valuation.OperationDate
+            })
+        };
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(content))));
+        var legacyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(draft))));
         await using (var existing = await sql.CommandAsync("SELECT JournalEntryId,ContentHash FROM dbo.JournalEntries WHERE SourceKey=@source AND PostedAt IS NOT NULL", ct, ("@source",draft.SourceKey)))
         await using (var reader = await existing.ExecuteReaderAsync(ct))
         {
             if (await reader.ReadAsync(ct))
             {
-                if (reader.GetString(1) != hash) throw new InvalidOperationException("Source reference was reused with different journal content.");
+                if (reader.GetString(1) != hash && reader.GetString(1) != legacyHash) throw new InvalidOperationException("Source reference was reused with different journal content.");
                 return reader.GetInt64(0);
             }
         }
