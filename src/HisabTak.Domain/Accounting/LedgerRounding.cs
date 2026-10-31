@@ -44,10 +44,11 @@ public static class SettlementAllocation
             || remainingPrincipal.Amount <= 0 || remainingBookValue.Amount < 0 || settledPrincipal.Amount <= 0
             || settledPrincipal.Amount > remainingPrincipal.Amount || settledPrincipal.CurrencyId != remainingPrincipal.CurrencyId)
             throw new ArgumentException("Settlement must be within the remaining principal and book value.");
-        if (decimal.Round(remainingBookValue.Amount, precision) != remainingBookValue.Amount)
+        if (decimal.Round(remainingBookValue.Amount, precision) != remainingBookValue.Amount
+            || decimal.Round(originalBookValue.Amount, precision) != originalBookValue.Amount)
             throw new ArgumentException("Remaining book value must already use the posting precision.");
         var allocated = settledPrincipal.Amount == remainingPrincipal.Amount ? remainingBookValue.Amount
-            : decimal.Round(checked(originalBookValue.Amount * (settledPrincipal.Amount / originalPrincipal.Amount)),
+            : decimal.Round(checked(originalBookValue.Amount * settledPrincipal.Amount / originalPrincipal.Amount),
                 precision, MidpointRounding.AwayFromZero);
         return new(Math.Min(allocated, remainingBookValue.Amount), remainingBookValue.CurrencyId);
     }

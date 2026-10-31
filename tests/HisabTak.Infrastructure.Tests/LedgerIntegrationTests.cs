@@ -325,7 +325,7 @@ public sealed class LedgerIntegrationTests
         var stored = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, id));
         Assert.Equal(2, stored.RoundingPrecision); Assert.Equal(4, stored.Lines.Count);
         Assert.Equal(0.015m, stored.Lines[0].BaseAmount); Assert.Equal(0.02m, stored.Lines[0].BookBaseAmount);
-        Assert.Equal(0.01m, Assert.Single(stored.Lines.Where(l => l.IsRounding)).BookBaseAmount);
+        Assert.Equal(0.01m, Assert.Single(stored.Lines, l => l.IsRounding).BookBaseAmount);
         var replacement = await With<IChartOfAccountsService, int>(test, s => s.CreateAccountAsync(f.Owner, "009098", "New rounding", f.Group, f.Currency, 1, f.Branch));
         await Change<IJournalService>(test, s => s.ConfigureRoundingAsync(f.Owner, f.Branch, replacement, 2));
         Assert.Equal(id, await Post(test, f, draft));
