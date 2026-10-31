@@ -61,7 +61,14 @@ public sealed class LedgerIntegrationTests
     {
         await using var db = test.Context();
         // Table names are test-owned constants, never user input.
-        return await db.Database.SqlQueryRaw<long>($"SELECT COUNT_BIG(*) AS Value FROM dbo.{table}").SingleAsync();
+        var query = table switch
+        {
+            "JournalEntries" => "SELECT COUNT_BIG(*) AS Value FROM dbo.JournalEntries",
+            "JournalLines" => "SELECT COUNT_BIG(*) AS Value FROM dbo.JournalLines",
+            "JournalOpeningAccounts" => "SELECT COUNT_BIG(*) AS Value FROM dbo.JournalOpeningAccounts",
+            _ => throw new ArgumentOutOfRangeException(nameof(table))
+        };
+        return await db.Database.SqlQueryRaw<long>(query).SingleAsync();
     }
 
     [SqlServerFact]
@@ -211,4 +218,95 @@ public sealed class LedgerIntegrationTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Post(test, f, f.Draft(amount: 0.000000001m)));
         Assert.Equal(0, await Count(test, "JournalEntries"));
     }
+    [SqlServerFact]
+    public async Task Foreign_currency_history_survives_rate_changes_and_reversal()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var foreignAccount = await With<IChartOfAccountsService, int>(test,
+            s => s.CreateAccountAsync(f.Owner, "009003", "Foreign", f.Group, f.OtherCurrency, 1, f.Branch));
+        var period = new FiscalPeriod("proposal", Date, Date);
+        var draft = JournalDraft.Create(f.Branch, period, Date, Guid.NewGuid(), [
+            new(foreignAccount, JournalSide.Debit, new(new(10m, f.OtherCurrency), f.Currency, 3.8m, Date)),
+            new(f.Credit, JournalSide.Credit, new(new(38m, f.Currency), f.Currency, 1m, Date))]);
+        var id = await Post(test, f, draft);
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.Currencies SET ExchangeRate=99 WHERE CurrencyId={0}", f.OtherCurrency);
+        var reverseId = await With<IJournalService, long>(test, s => s.ReverseAsync(f.Owner, id, Date.AddDays(1), Guid.NewGuid()));
+        var reversed = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, reverseId));
+        Assert.Equal(3.8m, reversed.Lines[0].RateToBase); Assert.Equal(38m, reversed.Lines[0].BaseAmount);
+        Assert.Equal(10m, reversed.Lines[0].Amount);
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_different_reversals_commit_only_one()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); var id = await Post(test, f, f.Draft());
+        async Task<bool> Reverse()
+        {
+            try { await With<IJournalService, long>(test, s => s.ReverseAsync(f.Owner, id, Date, Guid.NewGuid())); return true; }
+            catch (InvalidOperationException e) when (e.Message == "Journal has already been reversed.") { return false; }
+        }
+        Assert.Single(await Task.WhenAll(Reverse(), Reverse()), success => success);
+        Assert.Equal(2, await Count(test, "JournalEntries"));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_close_and_post_serialize_without_posting_after_close()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        async Task<bool> Attempt()
+        {
+            try { await Post(test, f, f.Draft()); return true; }
+            catch (InvalidOperationException e) when (e.Message == "Posting to a closed fiscal period is not allowed.") { return false; }
+        }
+        var attempt = Attempt(); var close = Change<IFiscalPeriodService>(test, s => s.CloseAsync(f.Owner, f.Period));
+        await Task.WhenAll(attempt, close);
+        Assert.Equal(await attempt ? 1 : 0, await Count(test, "JournalEntries"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Post(test, f, f.Draft()));
+    }
+
+    [SqlServerFact]
+    public async Task Legacy_opening_field_is_not_added_to_ledger_and_reservation_is_immutable()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.Accounts SET OpeningBalance=100, OpeningBalanceNature=1 WHERE AccountId={0}", f.Debit);
+        await Post(test, f, f.Draft(opening: true));
+        var balances = await With<IJournalService, IReadOnlyList<LedgerBalance>>(test, s => s.BalancesAsync(f.Owner, f.Branch, f.Currency, Date));
+        Assert.Equal(100m, balances.Single(x => x.AccountId == f.Debit).Debit);
+        await using var verify = test.Context();
+        await Assert.ThrowsAsync<SqlException>(() => verify.Database.ExecuteSqlRawAsync("DELETE dbo.JournalOpeningAccounts"));
+        Assert.Equal(100m, (await verify.Accounts.SingleAsync(x => x.Id == f.Debit)).OpeningBalance);
+    }
+
+    [SqlServerFact]
+    public async Task Sql_cannot_seal_an_unbalanced_journal()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        await using var db = test.Context();
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT dbo.JournalEntries(SourceKey,ContentHash,BranchId,FiscalPeriodId,EntryDate,Kind,CreatedBy)
+                VALUES(NEWID(),REPLICATE('0',64),{0},{1},'20260601',1,{2});
+            DECLARE @id bigint=SCOPE_IDENTITY();
+            INSERT dbo.JournalLines(JournalEntryId,LineNumber,AccountId,Side,Amount,CurrencyId,RateToBase,BaseAmount,BaseCurrencyId,ValuationDate)
+                VALUES(@id,1,{3},1,100,{5},1,100,{5},'20260601'),(@id,2,{4},2,99,{5},1,99,{5},'20260601');
+            """, f.Branch, f.Period, f.Owner, f.Debit, f.Credit, f.Currency);
+        var error = await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlRawAsync("UPDATE dbo.JournalEntries SET PostedAt=SYSUTCDATETIME()"));
+        Assert.Equal(51102, error.Number);
+        Assert.Empty(await With<IJournalService, IReadOnlyList<LedgerBalance>>(test, s => s.BalancesAsync(f.Owner, f.Branch, f.Currency, Date)));
+    }
+
+    [SqlServerFact]
+    public async Task Group_audit_failure_rolls_back_group_creation()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("""
+            CREATE TRIGGER dbo.RejectGroupAudit ON dbo.AuditLogs AFTER INSERT AS
+            BEGIN SET NOCOUNT ON;
+                IF EXISTS(SELECT 1 FROM inserted WHERE OperationType='ACCOUNT_GROUP_CREATED') THROW 51201,'Test failure',1;
+            END
+            """);
+        await Assert.ThrowsAsync<DbUpdateException>(() => With<IChartOfAccountsService, int>(test, s => s.CreateGroupAsync(f.Owner, "0099", "Rollback", f.Group)));
+        await using var verify = test.Context();
+        Assert.False(await verify.AccountMainGroups.AnyAsync(x => x.Code == "0099"));
+    }
+
 }

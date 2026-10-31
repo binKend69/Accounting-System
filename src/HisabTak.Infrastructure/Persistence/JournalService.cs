@@ -25,6 +25,7 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         if (company.BaseCurrencyId != currencyId && await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalEntries WHERE PostedAt IS NOT NULL", cancellationToken)>0)
             throw new InvalidOperationException("Base currency is fixed after posting.");
         await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.CompanyInfo SET BaseCurrencyId={currencyId} WHERE CompanyInfoId={company.Id}", cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.Currencies SET IsBaseCurrency=CASE WHEN CurrencyId={currencyId} THEN 1 ELSE 0 END", cancellationToken);
         db.AuditLogs.Add(new AuditLog(actorId, "BASE_CURRENCY_SET", "CompanyInfo", company.Id, Environment.MachineName));
         await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
