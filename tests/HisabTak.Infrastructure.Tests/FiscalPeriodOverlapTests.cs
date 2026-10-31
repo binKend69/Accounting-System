@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 
 namespace HisabTak.Infrastructure.Tests;
 
+[Trait("Category", "SqlServer")]
 public sealed class FiscalPeriodOverlapTests
 {
     [SqlServerFact]

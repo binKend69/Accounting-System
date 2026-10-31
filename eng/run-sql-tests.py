@@ -22,7 +22,7 @@ if "ca_bundle" in runtime:
 report = ROOT / "tests/HisabTak.Infrastructure.Tests/TestResults/sql-integration.trx"
 previous = (report.stat().st_mtime_ns, report.stat().st_size) if report.exists() else None
 result = subprocess.run(["dotnet", "test", "tests/HisabTak.Infrastructure.Tests", "--configuration", "Release",
-                         "--no-build", "--no-restore", "--filter", "FullyQualifiedName~SqlServerIntegrationTests",
+                         "--no-build", "--no-restore", "--filter", "Category=SqlServer",
                          "--logger", "trx;LogFileName=sql-integration.trx"], cwd=ROOT, env=environment)
 if result.returncode:
     raise SystemExit(result.returncode)

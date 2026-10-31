@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace HisabTak.Infrastructure.Tests;
 
+[Trait("Category", "SqlServer")]
 public sealed class SqlServerIntegrationTests
 {
     [SqlServerFact]
