@@ -16,8 +16,9 @@ public sealed class AccountMainGroup : ReferenceEntity
     {
         Code = RequiredText(code, 10);
         if (Code.Any(c => c is < '0' or > '9')) throw new ArgumentException("Account group code must contain digits.", nameof(code));
+        if (parentId is <= 0) throw new ArgumentOutOfRangeException(nameof(parentId));
         ParentMainGroupId = parentId;
-        Level = code.Length;
+        Level = Code.Length;
     }
     public string Code { get; private set; } = string.Empty;
     public int? ParentMainGroupId { get; private set; }
@@ -52,6 +53,19 @@ public sealed class Account : ReferenceEntity
     public bool IsHidden { get; private set; }
     public bool IsSuspended { get; private set; }
     public bool IsSystemAccount { get; private set; }
+
+    /// <summary>
+    /// Validates this account snapshot before posting. The posting service must also
+    /// reload it inside its transaction and check branch access and referenced currency.
+    /// </summary>
+    public void EnsurePostingAllowed(int transactionCurrencyId)
+    {
+        if (transactionCurrencyId <= 0) throw new ArgumentOutOfRangeException(nameof(transactionCurrencyId));
+        if (!IsActive || IsDeleted || IsSuspended)
+            throw new InvalidOperationException("Account is unavailable for posting.");
+        if (CurrencyId != transactionCurrencyId)
+            throw new InvalidOperationException("Journal line currency must match the account currency.");
+    }
 }
 
 public sealed class FiscalPeriod : ReferenceEntity
