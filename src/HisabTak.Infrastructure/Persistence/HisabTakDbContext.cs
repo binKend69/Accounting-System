@@ -127,6 +127,7 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         var period = Reference<FiscalPeriod>(model, "FiscalPeriods", "FiscalPeriodId", 50);
         period.ToTable("FiscalPeriods", t =>
         {
+            t.UseSqlOutputClause(false);
             t.HasCheckConstraint("CK_FiscalPeriods_Dates", "[StartDate] <= [EndDate]");
             t.HasCheckConstraint("CK_FiscalPeriods_Closure", "([IsClosed] = 0 AND [ClosedAt] IS NULL AND [ClosedByUserId] IS NULL) OR ([IsClosed] = 1 AND [ClosedAt] IS NOT NULL AND [ClosedByUserId] IS NOT NULL)");
         });
