@@ -66,6 +66,7 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         company.HasIndex(x => x.BranchId).IsUnique();
         company.ToTable("CompanyInfo", t =>
         {
+            t.UseSqlOutputClause(false);
             t.HasCheckConstraint("CK_CompanyInfo_Singleton", "[CompanyInfoId] = 1");
             t.HasCheckConstraint("CK_CompanyInfo_Costing", "[CostingMethod] IS NULL OR [CostingMethod] IN (1,2)");
         });
@@ -97,6 +98,7 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         group.HasIndex(x => x.Code).IsUnique();
         group.ToTable("AccountMainGroups", t =>
         {
+            t.UseSqlOutputClause(false);
             t.HasCheckConstraint("CK_AccountMainGroups_Parent", "[ParentMainGroupId] IS NULL OR [ParentMainGroupId] <> [MainGroupId]");
             t.HasCheckConstraint("CK_AccountMainGroups_Level", "[Level] > 0");
             t.HasCheckConstraint("CK_AccountMainGroups_Report", "[ClosingReportType] IS NULL OR [ClosingReportType] IN (1,2,3)");
@@ -114,6 +116,7 @@ public sealed class HisabTakDbContext(DbContextOptions<HisabTakDbContext> option
         account.HasIndex(x => x.AccountCode).IsUnique();
         account.ToTable("Accounts", t =>
         {
+            t.UseSqlOutputClause(false);
             t.HasCheckConstraint("CK_Accounts_Nature", "[Nature] IN (1,2)");
             t.HasCheckConstraint("CK_Accounts_OpeningNature", "[OpeningBalanceNature] IS NULL OR [OpeningBalanceNature] IN (1,2)");
             t.HasCheckConstraint("CK_Accounts_OpeningBalance", "[OpeningBalance] >= 0");

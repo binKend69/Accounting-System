@@ -32,6 +32,8 @@ public static class DatabaseRegistration
         services.AddScoped<ICompanySetupService, CompanySetupService>();
         services.AddScoped<IBranchSetupService, BranchSetupService>();
         services.AddScoped<IFiscalPeriodService, FiscalPeriodService>();
+        services.AddScoped<IChartOfAccountsService, ChartOfAccountsService>();
+        services.AddScoped<IJournalService, JournalService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

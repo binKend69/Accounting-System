@@ -39,7 +39,7 @@ public sealed class SqlServerIntegrationTests
         Assert.Empty(await database.Users.ToListAsync());
         Assert.Empty(await database.Companies.ToListAsync());
         Assert.Empty(await database.Accounts.ToListAsync());
-        Assert.Equal(5, (await database.Database.GetAppliedMigrationsAsync()).Count());
+        Assert.Equal(6, (await database.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     [SqlServerFact]

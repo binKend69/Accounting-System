@@ -103,6 +103,11 @@ public sealed class AuditLog
 
 public static class PermissionCodes
 {
+    public const string AccountManage = "ACCOUNTING.ACCOUNT.MANAGE";
+    public const string AccountingAllBranches = "ACCOUNTING.BRANCH.ALL";
+    public const string JournalPost = "ACCOUNTING.JOURNAL.POST";
+    public const string JournalReverse = "ACCOUNTING.JOURNAL.REVERSE";
+    public const string JournalRead = "ACCOUNTING.JOURNAL.READ";
     public const string SetupManage = "SETUP.MANAGE";
     public const string UsersManage = "SECURITY.MANAGE";
     public const string AuditRead = "AUDIT.VIEW";

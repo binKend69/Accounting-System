@@ -128,6 +128,8 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("MainGroupId");
 
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+
                     b.ToTable("Accounts", null, t =>
                         {
                             t.HasCheckConstraint("CK_Accounts_CreditLimit", "[CreditLimit] IS NULL OR [CreditLimit] >= 0");
@@ -241,6 +243,8 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("ParentMainGroupId");
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
 
                     b.ToTable("AccountMainGroups", null, t =>
                         {
@@ -840,6 +844,8 @@ namespace HisabTak.Infrastructure.Persistence.Migrations
                     b.HasIndex("DefaultSalesCurrencyId");
 
                     b.HasIndex("DefaultVoucherCurrencyId");
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
 
                     b.ToTable("CompanyInfo", null, t =>
                         {
