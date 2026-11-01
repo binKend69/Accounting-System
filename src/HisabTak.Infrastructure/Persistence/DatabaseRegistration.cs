@@ -33,7 +33,9 @@ public static class DatabaseRegistration
         services.AddScoped<IBranchSetupService, BranchSetupService>();
         services.AddScoped<IFiscalPeriodService, FiscalPeriodService>();
         services.AddScoped<IChartOfAccountsService, ChartOfAccountsService>();
-        services.AddScoped<IJournalService, JournalService>();
+        services.AddScoped<JournalService>();
+        services.AddScoped<IJournalService>(provider => provider.GetRequiredService<JournalService>());
+        services.AddScoped<IJournalDocumentService, JournalDocumentService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

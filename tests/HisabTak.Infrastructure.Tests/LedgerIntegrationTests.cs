@@ -26,7 +26,7 @@ public sealed class LedgerIntegrationTests
         }
     }
 
-    private static async Task<Fixture> SetupAsync(SqlTestDatabase test)
+    private static async Task<Fixture> SetupAsync(SqlTestDatabase test, bool configureRounding = true)
     {
         await using (var db = test.Context()) await new ReferenceDataSeeder(db).SeedAsync();
         await using var services = test.Services();
@@ -46,7 +46,7 @@ public sealed class LedgerIntegrationTests
         var credit = await chart.CreateAccountAsync(owner, "009002", "Credit", group, currency, 2, branch);
         await scope.ServiceProvider.GetRequiredService<IJournalService>().SetBaseCurrencyAsync(owner, currency);
         var rounding = await chart.CreateAccountAsync(owner, "009099", "Rounding", group, currency, 1, branch);
-        await scope.ServiceProvider.GetRequiredService<IJournalService>().ConfigureRoundingAsync(owner, branch, rounding, 2);
+        if (configureRounding) await scope.ServiceProvider.GetRequiredService<IJournalService>().ConfigureRoundingAsync(owner, branch, rounding, 2);
         return new(owner, branch, currency, otherCurrency, group, debit, credit, period.Id);
     }
 
@@ -345,6 +345,150 @@ public sealed class LedgerIntegrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Post(test, f, f.Draft()));
         Assert.Equal(0, await Count(test, "JournalEntries"));
         await Assert.ThrowsAsync<InvalidOperationException>(() => Change<IJournalService>(test, s => s.ConfigureRoundingAsync(f.Owner, f.Branch, f.Debit, 3)));
+    }
+
+    [SqlServerFact]
+    public async Task Document_draft_posts_once_and_cancellation_preserves_its_number()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); var draft = f.Draft();
+        var saved = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, draft));
+        Assert.Equal(JournalDocumentState.Draft, saved.State); Assert.Null(saved.Number);
+        Assert.Equal(0, await Count(test, "JournalEntries"));
+        Assert.Equal(saved, await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, draft)));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Post(test, f, draft));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.ReverseAsync(f.Owner, saved.Id, Date, Guid.NewGuid())));
+        Task<JournalDocument> PostDocument() => With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, saved.Id));
+        var results = await Task.WhenAll(PostDocument(), PostDocument());
+        Assert.Equal(results[0], results[1]); Assert.Equal(1, results[0].Number);
+        Assert.Equal(JournalDocumentState.Posted, results[0].State); Assert.Equal(1, await Count(test, "JournalEntries"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalService, long>(test, s => s.ReverseAsync(f.Owner, results[0].JournalId!.Value, Date, Guid.NewGuid())));
+        var reversed = await With<IJournalDocumentService, JournalDocument>(test, s => s.ReverseAsync(f.Owner, saved.Id, Date, Guid.NewGuid()));
+        Assert.Equal(JournalDocumentState.Reversed, reversed.State); Assert.Equal(1, reversed.Number);
+        Assert.Equal(reversed, await PostDocument());
+        Assert.Equal(reversed, await With<IJournalDocumentService, JournalDocument>(test, s => s.ReverseAsync(f.Owner, saved.Id, Date, Guid.NewGuid())));
+        Assert.Equal(2, await Count(test, "JournalEntries"));
+        var next = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft()));
+        Assert.Equal(2, (await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, next.Id))).Number);
+    }
+
+    [SqlServerFact]
+    public async Task Document_audit_failure_rolls_back_number_and_entire_journal()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var saved = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft()));
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("""
+            CREATE TRIGGER dbo.RejectDocumentAudit ON dbo.AuditLogs AFTER INSERT AS
+            BEGIN SET NOCOUNT ON;
+                IF EXISTS(SELECT 1 FROM inserted WHERE OperationType='DOCUMENT_POSTED') THROW 51202,'Test failure',1;
+            END
+            """);
+        await Assert.ThrowsAsync<DbUpdateException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, saved.Id)));
+        Assert.Equal(0, await Count(test, "JournalEntries")); Assert.Equal(0, await Count(test, "JournalLines"));
+        Assert.Equal(saved, await With<IJournalDocumentService, JournalDocument>(test, s => s.GetAsync(f.Owner, saved.Id)));
+        await using (var db = test.Context())
+        {
+            Assert.Equal(0, await db.Database.SqlQueryRaw<long>("SELECT COUNT_BIG(*) AS Value FROM dbo.DocumentNumbers").SingleAsync());
+            Assert.False(await db.AuditLogs.AnyAsync(x => x.OperationType == "JOURNAL_POSTED"));
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER dbo.RejectDocumentAudit");
+        }
+        var posted = await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, saved.Id));
+        Assert.Equal(1, posted.Number);
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_documents_get_unique_numbers_and_opening_has_its_own_sequence()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var first = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft()));
+        var second = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft()));
+        var posted = await Task.WhenAll(
+            With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, first.Id)),
+            With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, second.Id)));
+        Assert.Equal(new long?[] { 1, 2 }, posted.Select(x => x.Number).Order());
+        var opening = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft(opening: true)));
+        var result = await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, opening.Id));
+        Assert.Equal("JOURNAL_OPENING", result.TypeCode); Assert.Equal(1, result.Number);
+    }
+
+    [SqlServerFact]
+    public async Task Posted_document_cannot_be_rewritten_and_source_content_cannot_change()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); var draft = f.Draft();
+        var saved = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, draft));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft(draft.SourceKey, 200))));
+        await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, saved.Id));
+        await using var db = test.Context();
+        await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlRawAsync("UPDATE dbo.JournalDocuments SET DocumentNumber=99 WHERE DocumentId={0}", saved.Id));
+        await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlRawAsync("DELETE dbo.JournalDocuments WHERE DocumentId={0}", saved.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.GetAsync(0, saved.Id)));
+    }
+
+    [SqlServerFact]
+    public async Task Upgrade_keeps_legacy_exact_balances_and_reversal_without_reinterpretation()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync("20261031000300_HardenLedgerHistory"); var f = await SetupAsync(test, false);
+        await using (var db = test.Context())
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT dbo.JournalEntries(SourceKey,ContentHash,BranchId,FiscalPeriodId,EntryDate,Kind,CreatedBy)
+                VALUES(NEWID(),REPLICATE('0',64),{0},{1},'20260601',1,{2});
+                DECLARE @id bigint=SCOPE_IDENTITY();
+                INSERT dbo.JournalLines(JournalEntryId,LineNumber,AccountId,Side,Amount,CurrencyId,RateToBase,BaseAmount,BaseCurrencyId,ValuationDate)
+                VALUES(@id,1,{3},1,0.015,{5},1,0.015,{5},'20260601'),(@id,2,{4},2,0.015,{5},1,0.015,{5},'20260601');
+                UPDATE dbo.JournalEntries SET PostedAt=SYSUTCDATETIME() WHERE JournalEntryId=@id;
+                """, f.Branch, f.Period, f.Owner, f.Debit, f.Credit, f.Currency);
+            await db.Database.MigrateAsync();
+        }
+        var original = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, 1));
+        Assert.Null(original.RoundingPrecision); Assert.All(original.Lines, l => Assert.Null(l.BookBaseAmount));
+        var balances = await With<IJournalService, IReadOnlyList<LedgerBalance>>(test, s => s.BalancesAsync(f.Owner, f.Branch, f.Currency, Date));
+        Assert.Equal(0.015m, balances.Sum(b => b.BaseDebit));
+        var reversedId = await With<IJournalService, long>(test, s => s.ReverseAsync(f.Owner, 1, Date.AddDays(1), Guid.NewGuid()));
+        var reversed = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, reversedId));
+        Assert.Null(reversed.RoundingPrecision); Assert.All(reversed.Lines, l => Assert.Equal(0.015m, l.BaseAmount));
+    }
+
+    [SqlServerFact]
+    public async Task Cancellation_audit_failure_rolls_back_reversal_and_document_state()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var draft = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft()));
+        var posted = await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, draft.Id));
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("""
+            CREATE TRIGGER dbo.RejectDocumentReversalAudit ON dbo.AuditLogs AFTER INSERT AS
+            BEGIN SET NOCOUNT ON;
+                IF EXISTS(SELECT 1 FROM inserted WHERE OperationType='DOCUMENT_REVERSED') THROW 51203,'Test failure',1;
+            END
+            """);
+        await Assert.ThrowsAsync<DbUpdateException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.ReverseAsync(f.Owner, posted.Id, Date, Guid.NewGuid())));
+        Assert.Equal(posted, await With<IJournalDocumentService, JournalDocument>(test, s => s.GetAsync(f.Owner, posted.Id)));
+        Assert.Equal(1, await Count(test, "JournalEntries"));
+        await using var verify = test.Context();
+        Assert.False(await verify.AuditLogs.AnyAsync(x => x.OperationType == "JOURNAL_REVERSED"));
+    }
+
+    [SqlServerFact]
+    public async Task Numbering_is_independent_for_each_branch_and_calendar_year()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var first = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, f.Draft()));
+        Assert.Equal(1, (await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, first.Id))).Number);
+        var branch = await With<IBranchSetupService, int>(test, s => s.CreateAsync(f.Owner, "Second"));
+        var debit = await With<IChartOfAccountsService, int>(test, s => s.CreateAccountAsync(f.Owner, "0201", "Debit", f.Group, f.Currency, 1, branch));
+        var credit = await With<IChartOfAccountsService, int>(test, s => s.CreateAccountAsync(f.Owner, "0202", "Credit", f.Group, f.Currency, 2, branch));
+        var rounding = await With<IChartOfAccountsService, int>(test, s => s.CreateAccountAsync(f.Owner, "0299", "Rounding", f.Group, f.Currency, 1, branch));
+        await Change<IJournalService>(test, s => s.ConfigureRoundingAsync(f.Owner, branch, rounding, 2));
+        JournalDraft Build(int branchId, int debitId, int creditId, DateOnly date) => JournalDraft.Create(branchId, new("proposal", date, date), date, Guid.NewGuid(), [
+            new(debitId, JournalSide.Debit, new(new(1m, f.Currency), f.Currency, 1m, date)),
+            new(creditId, JournalSide.Credit, new(new(1m, f.Currency), f.Currency, 1m, date))]);
+        var second = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, Build(branch, debit, credit, Date)));
+        Assert.Equal(1, (await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, second.Id))).Number);
+        await using (var db = test.Context())
+        {
+            db.FiscalPeriods.Add(new("2027", new(2027,1,1), new(2027,12,31))); await db.SaveChangesAsync();
+        }
+        var nextYear = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, Build(f.Branch, f.Debit, f.Credit, new(2027,1,1))));
+        Assert.Equal(1, (await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, nextYear.Id))).Number);
     }
 
 }

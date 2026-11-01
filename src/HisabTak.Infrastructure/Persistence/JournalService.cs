@@ -60,23 +60,41 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         await tx.CommitAsync(cancellationToken);
     }
 
-    public async Task<long> PostAsync(int actorId, JournalDraft draft, CancellationToken cancellationToken = default)
+    public Task<long> PostAsync(int actorId, JournalDraft draft, CancellationToken cancellationToken = default) =>
+        PostCoreAsync(actorId, draft, false, cancellationToken);
+
+    internal Task<long> PostDocumentAsync(int actorId, JournalDraft draft, CancellationToken cancellationToken) =>
+        PostCoreAsync(actorId, draft, true, cancellationToken);
+
+    private async Task<long> PostCoreAsync(int actorId, JournalDraft draft, bool documentOperation, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
         if (draft.Kind == JournalKind.Reversal) throw new InvalidOperationException("Use the stored-journal reversal service.");
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var tx = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await DatabaseLock.AcquireAsync(db, "HisabTak.Accounting.Periods", cancellationToken);
         await authorization.DemandAsync(actorId, PermissionCodes.JournalPost, cancellationToken);
+        if (!documentOperation && await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE SourceKey=@source", cancellationToken, ("@source", draft.SourceKey)) > 0)
+            throw new InvalidOperationException("Post the owning document through its coordinator.");
         var id = await WriteAsync(actorId, draft, cancellationToken);
-        await tx.CommitAsync(cancellationToken);
+        if (tx is not null) await tx.CommitAsync(cancellationToken);
         return id;
     }
 
-    public async Task<long> ReverseAsync(int actorId, long originalId, DateOnly date, Guid sourceKey, CancellationToken cancellationToken = default)
+    public Task<long> ReverseAsync(int actorId, long originalId, DateOnly date, Guid sourceKey, CancellationToken cancellationToken = default) =>
+        ReverseCoreAsync(actorId, originalId, date, sourceKey, false, cancellationToken);
+
+    internal Task<long> ReverseDocumentAsync(int actorId, long originalId, DateOnly date, Guid sourceKey, CancellationToken cancellationToken) =>
+        ReverseCoreAsync(actorId, originalId, date, sourceKey, true, cancellationToken);
+
+    private async Task<long> ReverseCoreAsync(int actorId, long originalId, DateOnly date, Guid sourceKey, bool documentOperation, CancellationToken cancellationToken)
     {
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var tx = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await DatabaseLock.AcquireAsync(db, "HisabTak.Accounting.Periods", cancellationToken);
         await authorization.DemandAsync(actorId, PermissionCodes.JournalReverse, cancellationToken);
+        if (!documentOperation && await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE JournalEntryId=@id", cancellationToken, ("@id", originalId)) > 0)
+            throw new InvalidOperationException("Reverse the owning document through its coordinator.");
         var original = await ReadAsync(originalId, cancellationToken);
         await AccountingAccess.BranchAsync(db, authorization, actorId, original.BranchId, cancellationToken);
         if (original.Kind == JournalKind.Reversal) throw new InvalidOperationException("A reversal cannot itself be reversed.");
@@ -87,7 +105,7 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         // The real persisted target period is reloaded and checked inside WriteAsync.
         var reversal = proposal.Reverse(originalId, new FiscalPeriod("target", date, date), date, sourceKey);
         var id = await WriteAsync(actorId, reversal, cancellationToken, original);
-        await tx.CommitAsync(cancellationToken);
+        if (tx is not null) await tx.CommitAsync(cancellationToken);
         return id;
     }
 
