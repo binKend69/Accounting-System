@@ -104,7 +104,7 @@ public sealed class LedgerIntegrationTests
             try { await With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Unit, "  Box of twelve  ")); return true; }
             catch (InvalidOperationException) { return false; }
         }
-        var results = await Task.WhenAll(Create(), Create()); Assert.Single(results.Where(x => x));
+        var results = await Task.WhenAll(Create(), Create()); Assert.Single(results, x => x);
         await using var db = test.Context();
         var unit = await db.Units.SingleAsync(x => x.NameAr == "Box of twelve"); unit.MarkDeleted(); await db.SaveChangesAsync();
         Assert.False(await Create());

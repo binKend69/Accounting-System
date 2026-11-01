@@ -67,12 +67,12 @@
                     <TextBlock Text="إنشاء فترة جديدة (لا تتداخل مع فترة قائمة)" Margin="0,14,0,6"/>
                     <WrapPanel><TextBox x:Name="PeriodNameBox" Width="160" ToolTip="اسم الفترة"/><DatePicker x:Name="PeriodStartBox" Width="140" Margin="4" ToolTip="بداية الفترة"/><DatePicker x:Name="PeriodEndBox" Width="140" Margin="4" ToolTip="نهاية الفترة"/><Button Content="إنشاء الفترة" Click="CreatePeriod_Click"/></WrapPanel>
                 </StackPanel></ScrollViewer></TabItem>
-                <TabItem Header="تهيئة المخزون"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
+                <TabItem x:Name="InventoryTab" Header="تهيئة المخزون"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
                     <TextBlock Text="الوحدات والمستودعات ومواقع التخزين" FontSize="22" Margin="0,0,0,12"/>
                     <TextBlock Text="الوحدات مشتركة للمنشأة. المستودع يتبع الفرع المحدد، وموقع التخزين يتبع مستودعًا فيه." TextWrapping="Wrap"/>
-                    <Button Content="تحميل بيانات الفرع" Click="LoadInventory_Click" HorizontalAlignment="Right"/>
-                    <WrapPanel><TextBox x:Name="InventoryNameBox" Width="260" MaxLength="100" AutomationProperties.Name="اسم الوحدة أو المستودع أو الموقع"/><Button Content="إضافة وحدة" Click="CreateUnit_Click"/><Button Content="إضافة مستودع" Click="CreateWarehouse_Click"/></WrapPanel>
-                    <WrapPanel><ComboBox x:Name="WarehouseBox" Width="260" DisplayMemberPath="Name" SelectedValuePath="Id" AutomationProperties.Name="مستودع موقع التخزين"/><Button Content="إضافة موقع في المستودع" Click="CreateLocation_Click"/></WrapPanel>
+                    <Button x:Name="LoadInventoryButton" Content="تحميل بيانات الفرع" Click="LoadInventory_Click" HorizontalAlignment="Right"/>
+                    <WrapPanel><TextBox x:Name="InventoryNameBox" Width="260" MaxLength="100" AutomationProperties.Name="اسم الوحدة أو المستودع أو الموقع"/><Button x:Name="CreateUnitButton" Content="إضافة وحدة" Click="CreateUnit_Click"/><Button x:Name="CreateWarehouseButton" Content="إضافة مستودع" Click="CreateWarehouse_Click"/></WrapPanel>
+                    <WrapPanel><ComboBox x:Name="WarehouseBox" Width="260" DisplayMemberPath="Name" SelectedValuePath="Id" AutomationProperties.Name="مستودع موقع التخزين"/><Button x:Name="CreateLocationButton" Content="إضافة موقع في المستودع" Click="CreateLocation_Click"/></WrapPanel>
                     <TextBlock Text="الوحدات" FontWeight="SemiBold" Margin="0,16,0,4"/><ItemsControl x:Name="UnitList" DisplayMemberPath="Name"/>
                     <TextBlock Text="مواقع التخزين — اختر مستودعًا لعرض مواقعه" FontWeight="SemiBold" Margin="0,16,0,4"/><ItemsControl x:Name="LocationList" DisplayMemberPath="Name"/>
                 </StackPanel></ScrollViewer></TabItem>

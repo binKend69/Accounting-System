@@ -96,12 +96,12 @@ public partial class MainWindow : Window
         catch (InputException e) { StatusText.Text = e.Message; }
         catch (DocumentConflictException) { StatusText.Text = "تغير المستند بواسطة جلسة أخرى. افتح النسخة الحالية قبل الحفظ أو الترحيل؛ لم نحفظ فوق التعديل الآخر."; }
         catch (UnauthorizedAccessException) { StatusText.Text = "لا تملك صلاحية هذه العملية أو الوصول إلى الفرع المحدد."; }
-        catch (ArgumentException) { StatusText.Text = "راجع المبالغ والتواريخ والحسابات. يجب أن تكون القيم صحيحة والقيد متوازنًا."; }
+        catch (ArgumentException) { StatusText.Text = InventoryTab.IsSelected ? "أدخل اسمًا صحيحًا: الوحدة حتى 50 حرفًا، والمستودع والموقع حتى 100 حرف، واختر مستودع الموقع." : "راجع المبالغ والتواريخ والحسابات. يجب أن تكون القيم صحيحة والقيد متوازنًا."; }
         catch (Exception e)
         {
             logger.LogWarning("Accounting operation failed ({ExceptionType}).", e.GetType().Name);
             StatusText.Text = e is InvalidOperationException
-                ? "تعذرت العملية: تحقق من توازن القيد، والفترة المفتوحة، وعملة الأساس وحساب التقريب، وصلاحية الحسابات. لسند القبض أو الصرف اختر حساب صندوق أو بنك في جانبه الصحيح."
+                ? InventoryTab.IsSelected ? "تعذر الحفظ: تحقق من عدم تكرار الاسم ومن نشاط الفرع والمستودع. الأسماء المحذوفة أو المعطلة تبقى محجوزة. حدّث القائمة قبل إعادة المحاولة." : "تعذرت العملية: تحقق من توازن القيد، والفترة المفتوحة، وعملة الأساس وحساب التقريب، وصلاحية الحسابات. لسند القبض أو الصرف اختر حساب صندوق أو بنك في جانبه الصحيح."
                 : "تعذر إكمال العملية. تحقق من اتصال قاعدة البيانات وترقيتها. أعد فتح المستند للتحقق من حالته قبل المحاولة مجددًا.";
         }
         finally { busy = false; LoginPanel.IsEnabled = true; WorkspacePanel.IsEnabled = true; LogoutButton.IsEnabled = true; UpdateButtons(); }

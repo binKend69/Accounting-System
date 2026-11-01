@@ -2,6 +2,7 @@ using System.Windows;
 using System.Collections.ObjectModel;
 using System.IO;
 using HisabTak.Application.Accounting;
+using HisabTak.Application.Inventory;
 using HisabTak.Application.Security;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -42,8 +43,10 @@ internal static class Program
             throw new InvalidOperationException("Missing-connection login must fail visibly and safely.");
         window.Close();
         var documents = new SmokeDocuments();
+        var inventory = new SmokeInventory();
         using var authenticated = new ServiceCollection().AddLogging()
             .AddSingleton<IAuthenticationService, SmokeAuthentication>().AddSingleton<IAccountingWorkspaceService, SmokeWorkspace>()
+            .AddSingleton<IInventorySetupService>(inventory)
             .AddSingleton<IJournalDocumentService>(documents).BuildServiceProvider();
         MainWindow OpenAuthenticated()
         {
@@ -71,7 +74,20 @@ internal static class Program
             || ((Button)history.FindName("PostButton")).IsEnabled || !((Button)history.FindName("ReverseButton")).IsEnabled)
             throw new InvalidOperationException("Posted document editing was not disabled.");
         if (documents.PostCalls!=0) throw new InvalidOperationException("Reading or saving a draft must not post.");
-        Capture(history,"workspace-posted"); history.Close(); app.Shutdown();
+        Capture(history,"workspace-posted");
+        ((TabItem)history.FindName("InventoryTab")).IsSelected = true;
+        Click(history,"LoadInventoryButton");
+        if (((ItemsControl)history.FindName("UnitList")).Items.Count != 1 || ((ItemsControl)history.FindName("LocationList")).Items.Count != 1)
+            throw new InvalidOperationException("Inventory references did not load for selected warehouse.");
+        ((TextBox)history.FindName("InventoryNameBox")).Text = "Shelf B";
+        Click(history,"CreateLocationButton");
+        if (inventory.Created != InventoryReferenceKind.Location || inventory.Parent != 7 || inventory.Name != "Shelf B")
+            throw new InvalidOperationException("Inventory setup did not send the selected warehouse and name.");
+        Capture(history,"inventory-setup");
+        Click(history,"LogoutButton");
+        if (((ItemsControl)history.FindName("UnitList")).Items.Count != 0 || ((ComboBox)history.FindName("WarehouseBox")).Items.Count != 0)
+            throw new InvalidOperationException("Logout retained inventory reference data.");
+        history.Close(); app.Shutdown();
         Console.WriteLine("WPF smoke passed: XAML construction, RTL, authenticated workspace gate, two window sizes, safe missing-connection login, authenticated editor save and immutable posted view (stub services).");
     }
     private static void Click(Window window,string name)
@@ -96,5 +112,18 @@ internal static class Program
             try { return FindButton(child); } catch (InvalidOperationException) { }
         }
         throw new InvalidOperationException("Login button not found.");
+    }
+}
+
+internal sealed class SmokeInventory : IInventorySetupService
+{
+    public InventoryReferenceKind? Created { get; private set; }
+    public int? Parent { get; private set; }
+    public string? Name { get; private set; }
+    public Task<InventorySetup> LoadAsync(int actorId, int branchId, CancellationToken ct = default) =>
+        Task.FromResult(new InventorySetup([new(1, "حبة", null)], [new(7, "المستودع الرئيسي", branchId)], [new(8, "الرف الأول", 7)]));
+    public Task<int> CreateAsync(int actorId, int branchId, InventoryReferenceKind kind, string name, int? warehouseId = null, CancellationToken ct = default)
+    {
+        Created = kind; Parent = warehouseId; Name = name; return Task.FromResult(9);
     }
 }
