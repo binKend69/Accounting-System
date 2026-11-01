@@ -4,6 +4,8 @@ namespace HisabTak.Application.Accounting;
 
 public interface IChartOfAccountsService
 {
+    Task<int> CreateClassifiedAccountAsync(int actorId, int branchId, string code, string name, int groupId, int currencyId, byte nature, int? generalGroupId, CancellationToken cancellationToken = default);
+    Task SetGeneralGroupAsync(int actorId, int accountId, int generalGroupId, CancellationToken cancellationToken = default);
     Task<int> CreateGroupAsync(int actorId, string code, string name, int? parentId, CancellationToken cancellationToken = default);
     Task MoveGroupAsync(int actorId, int groupId, int? parentId, CancellationToken cancellationToken = default);
     Task<int> CreateAccountAsync(int actorId, string code, string name, int groupId, int currencyId, byte nature, int branchId, CancellationToken cancellationToken = default);

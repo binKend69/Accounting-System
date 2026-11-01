@@ -36,7 +36,10 @@ public sealed class ChartOfAccountsService(HisabTakDbContext db, IAuthorizationS
         await tx.CommitAsync(cancellationToken);
     }
 
-    public async Task<int> CreateAccountAsync(int actorId, string code, string name, int groupId, int currencyId, byte nature, int branchId, CancellationToken cancellationToken = default)
+    public Task<int> CreateAccountAsync(int actorId, string code, string name, int groupId, int currencyId, byte nature, int branchId, CancellationToken cancellationToken = default) =>
+        CreateClassifiedAccountAsync(actorId, branchId, code, name, groupId, currencyId, nature, null, cancellationToken);
+
+    public async Task<int> CreateClassifiedAccountAsync(int actorId, int branchId, string code, string name, int groupId, int currencyId, byte nature, int? generalGroupId, CancellationToken cancellationToken = default)
     {
         var account = new Account(code, name, groupId, currencyId, nature);
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -47,7 +50,10 @@ public sealed class ChartOfAccountsService(HisabTakDbContext db, IAuthorizationS
             throw new InvalidOperationException("Currency is unavailable.");
         if (await db.Accounts.IgnoreQueryFilters().AnyAsync(x => x.AccountCode == account.AccountCode, cancellationToken))
             throw new InvalidOperationException("Account code already exists, including archived accounts.");
+        if (generalGroupId is int classification && !await db.AccountGeneralGroups.AnyAsync(x => x.Id == classification && x.IsActive, cancellationToken))
+            throw new InvalidOperationException("Account classification is unavailable.");
         db.Accounts.Add(account);
+        db.Entry(account).Property(x => x.GeneralGroupId).CurrentValue = generalGroupId;
         db.Entry(account).Property(x => x.BranchId).CurrentValue = branchId;
         await db.SaveChangesAsync(cancellationToken);
         await AuditAsync(actorId, "ACCOUNT_CREATED", "Accounts", account.Id, cancellationToken);
@@ -65,6 +71,21 @@ public sealed class ChartOfAccountsService(HisabTakDbContext db, IAuthorizationS
         await AccountingAccess.BranchAsync(db, authorization, actorId, branch, cancellationToken);
         await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.Accounts SET IsSuspended={suspended}, ModifiedAt=SYSUTCDATETIME() WHERE AccountId={accountId}", cancellationToken);
         await AuditAsync(actorId, "ACCOUNT_SUSPENSION_CHANGED", "Accounts", accountId, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    public async Task SetGeneralGroupAsync(int actorId, int accountId, int generalGroupId, CancellationToken cancellationToken = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await LockAsync(actorId, cancellationToken);
+        var account = await db.Accounts.AsNoTracking().SingleAsync(x => x.Id == accountId, cancellationToken);
+        if (account.BranchId is not int branch) throw new InvalidOperationException("Explicit branch required.");
+        await AccountingAccess.BranchAsync(db, authorization, actorId, branch, cancellationToken);
+        if (!await db.AccountGeneralGroups.AnyAsync(x => x.Id == generalGroupId && x.IsActive, cancellationToken)) throw new InvalidOperationException("Group unavailable.");
+        if (account.GeneralGroupId != generalGroupId && await new SqlLedger(db).ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalLines WHERE AccountId=@id", cancellationToken, ("@id", accountId)) > 0)
+            throw new InvalidOperationException("Historical account classification cannot change.");
+        await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.Accounts SET GeneralGroupId={generalGroupId},ModifiedAt=SYSUTCDATETIME() WHERE AccountId={accountId}", cancellationToken);
+        await AuditAsync(actorId, "ACCOUNT_CLASSIFIED", "Accounts", accountId, cancellationToken);
         await tx.CommitAsync(cancellationToken);
     }
 

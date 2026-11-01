@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using HisabTak.Application;
 using HisabTak.Infrastructure;
+using HisabTak.Infrastructure.Persistence;
 using HisabTak.WPF.Views;
 using HisabTak.WPF.ViewModels;
 using Microsoft.Extensions.Configuration;
@@ -40,6 +41,8 @@ public partial class App : System.Windows.Application
             builder.Logging.ClearProviders();
             builder.Services.AddApplication();
             builder.Services.AddInfrastructure(builder.Configuration);
+            var connection = builder.Configuration["Database:ConnectionString"];
+            if (!string.IsNullOrWhiteSpace(connection)) builder.Services.AddSqlServerFoundation(connection);
             builder.Services.AddTransient<MainWindowViewModel>();
             builder.Services.AddTransient<MainWindow>();
             _host = builder.Build();

@@ -36,6 +36,7 @@ public static class DatabaseRegistration
         services.AddScoped<JournalService>();
         services.AddScoped<IJournalService>(provider => provider.GetRequiredService<JournalService>());
         services.AddScoped<IJournalDocumentService, JournalDocumentService>();
+        services.AddScoped<IAccountingWorkspaceService, AccountingWorkspaceService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

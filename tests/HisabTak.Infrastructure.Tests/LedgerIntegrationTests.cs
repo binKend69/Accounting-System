@@ -491,4 +491,115 @@ public sealed class LedgerIntegrationTests
         Assert.Equal(1, (await With<IJournalDocumentService, JournalDocument>(test, s => s.PostAsync(f.Owner, nextYear.Id))).Number);
     }
 
+    [SqlServerFact]
+    public async Task Draft_edits_detect_conflicts_and_post_only_the_reviewed_version()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); var original = f.Draft();
+        var saved = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, original));
+        var changed = f.Draft(original.SourceKey, 200);
+        var edited = await With<IJournalDocumentService, JournalDocument>(test, s => s.UpdateDraftAsync(f.Owner, saved.Id, saved.Version, changed));
+        Assert.Equal(2, edited.Version);
+        Assert.Equal(edited, await With<IJournalDocumentService, JournalDocument>(test, s => s.UpdateDraftAsync(f.Owner, saved.Id, saved.Version, changed)));
+        await Assert.ThrowsAsync<DocumentConflictException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.UpdateDraftAsync(f.Owner, saved.Id, saved.Version, f.Draft(original.SourceKey, 300))));
+        await Assert.ThrowsAsync<DocumentConflictException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, saved.Id, saved.Version)));
+        Assert.Equal(0, await Count(test, "JournalEntries"));
+        var posted = await With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, saved.Id, edited.Version));
+        Assert.Equal(posted, await With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, saved.Id, edited.Version)));
+        await Assert.ThrowsAsync<DocumentConflictException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, saved.Id, saved.Version)));
+        var journal = await With<IJournalService, PostedJournal>(test, s => s.GetAsync(f.Owner, posted.JournalId!.Value));
+        Assert.All(journal.Lines, l => Assert.Equal(200m, l.Amount));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.UpdateDraftAsync(f.Owner, saved.Id, posted.Version, original)));
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_different_draft_edits_cannot_overwrite_each_other()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); var original = f.Draft();
+        var saved = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, original));
+        async Task<bool> Edit(decimal amount)
+        {
+            try { await With<IJournalDocumentService, JournalDocument>(test, s => s.UpdateDraftAsync(f.Owner, saved.Id, 1, f.Draft(original.SourceKey, amount))); return true; }
+            catch (DocumentConflictException) { return false; }
+        }
+        Assert.Single(await Task.WhenAll(Edit(200), Edit(300)), success => success);
+        var details = await With<IJournalDocumentService, JournalDocumentDetails>(test, s => s.DetailsAsync(f.Owner, saved.Id));
+        Assert.Equal(2, details.Document.Version);
+        Assert.Contains(details.Draft.Lines[0].Valuation.Original.Amount, new[] { 200m, 300m });
+    }
+
+    [SqlServerFact]
+    public async Task Draft_edit_audit_failure_restores_payload_and_version()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); var original = f.Draft();
+        var saved = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveDraftAsync(f.Owner, original));
+        await using (var db = test.Context()) await db.Database.ExecuteSqlRawAsync("""
+            CREATE TRIGGER dbo.RejectEditAudit ON dbo.AuditLogs AFTER INSERT AS
+            BEGIN SET NOCOUNT ON;
+                IF EXISTS(SELECT 1 FROM inserted WHERE OperationType='DOCUMENT_DRAFT_UPDATED') THROW 51204,'Test failure',1;
+            END
+            """);
+        await Assert.ThrowsAsync<DbUpdateException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.UpdateDraftAsync(f.Owner, saved.Id, 1, f.Draft(original.SourceKey, 200))));
+        var details = await With<IJournalDocumentService, JournalDocumentDetails>(test, s => s.DetailsAsync(f.Owner, saved.Id));
+        Assert.Equal(1, details.Document.Version); Assert.Equal(100m, details.Draft.Lines[0].Valuation.Original.Amount);
+    }
+
+    [SqlServerFact]
+    public async Task Cash_receipt_and_payment_use_classified_accounts_and_independent_sequences()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); int cashGroup;
+        await using (var db = test.Context()) cashGroup = (await db.AccountGeneralGroups.SingleAsync(x => x.SystemCode == "CASH")).Id;
+        await Change<IChartOfAccountsService>(test, s => s.SetGeneralGroupAsync(f.Owner, f.Debit, cashGroup));
+        var receipt = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveVoucherAsync(f.Owner, f.Draft(), "RECEIPT_VOUCHER"));
+        var postedReceipt = await With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, receipt.Id, receipt.Version));
+        var paymentDraft = JournalDraft.Create(f.Branch, new("proposal", Date, Date), Date, Guid.NewGuid(), [
+            new(f.Debit, JournalSide.Credit, new(new(100m, f.Currency), f.Currency, 1m, Date)),
+            new(f.Credit, JournalSide.Debit, new(new(100m, f.Currency), f.Currency, 1m, Date))]);
+        var payment = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveVoucherAsync(f.Owner, paymentDraft, "PAYMENT_VOUCHER"));
+        var postedPayment = await With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, payment.Id, payment.Version));
+        Assert.Equal(1, postedReceipt.Number); Assert.Equal(1, postedPayment.Number);
+        var balances = await With<IJournalService, IReadOnlyList<LedgerBalance>>(test, s => s.BalancesAsync(f.Owner, f.Branch, f.Currency, Date));
+        Assert.All(balances, b => Assert.Equal(b.Debit, b.Credit));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.SaveVoucherAsync(f.Owner, f.Draft(), "PAYMENT_VOUCHER")));
+    }
+
+    [SqlServerFact]
+    public async Task Voucher_revalidates_cash_classification_at_posting_and_listing_never_posts()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); int cashGroup, customerGroup;
+        await using (var db = test.Context())
+        {
+            cashGroup = (await db.AccountGeneralGroups.SingleAsync(x => x.SystemCode == "CASH")).Id;
+            customerGroup = (await db.AccountGeneralGroups.SingleAsync(x => x.SystemCode == "CUSTOMER")).Id;
+        }
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.SaveVoucherAsync(f.Owner, f.Draft(), "RECEIPT_VOUCHER")));
+        await Change<IChartOfAccountsService>(test, s => s.SetGeneralGroupAsync(f.Owner, f.Debit, cashGroup));
+        var receipt = await With<IJournalDocumentService, JournalDocument>(test, s => s.SaveVoucherAsync(f.Owner, f.Draft(), "RECEIPT_VOUCHER"));
+        await Change<IChartOfAccountsService>(test, s => s.SetGeneralGroupAsync(f.Owner, f.Debit, customerGroup));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IJournalDocumentService, JournalDocument>(test, s => s.PostVersionAsync(f.Owner, receipt.Id, 1)));
+        Assert.Single(await With<IJournalDocumentService, IReadOnlyList<JournalDocument>>(test, s => s.ListAsync(f.Owner, f.Branch)));
+        await With<IJournalDocumentService, JournalDocumentDetails>(test, s => s.DetailsAsync(f.Owner, receipt.Id));
+        await With<IJournalDocumentService, JournalDocumentDetails>(test, s => s.DetailsAsync(f.Owner, receipt.Id));
+        Assert.Equal(0, await Count(test, "JournalEntries"));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IJournalDocumentService, IReadOnlyList<JournalDocument>>(test, s => s.ListAsync(0, f.Branch)));
+    }
+
+    [SqlServerFact]
+    public async Task Workspace_restricts_branch_and_accounts_using_server_permissions()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); int userId;
+        var otherBranch = await With<IBranchSetupService, int>(test, s => s.CreateAsync(f.Owner, "Other"));
+        await using (var db = test.Context())
+        {
+            var user = new User("reader", new HisabTak.Infrastructure.Security.BCryptPasswordHasher().Hash("Test-" + Guid.NewGuid().ToString("N")));
+            db.Users.Add(user); await db.SaveChangesAsync(); userId = user.Id;
+            await db.Database.ExecuteSqlRawAsync("UPDATE dbo.Users SET BranchId={0} WHERE UserId={1}", f.Branch, userId);
+            var permission = await db.Permissions.SingleAsync(x => x.Code == PermissionCodes.JournalRead);
+            db.UserPermissions.Add(new UserPermission(userId, permission.Id)); await db.SaveChangesAsync();
+        }
+        var workspace = await With<IAccountingWorkspaceService, AccountingWorkspace>(test, s => s.LoadAsync(userId, f.Branch));
+        Assert.Equal(f.Branch, Assert.Single(workspace.Branches).Id);
+        Assert.Contains(workspace.Accounts, x => x.Id == f.Debit);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IAccountingWorkspaceService, AccountingWorkspace>(test, s => s.LoadAsync(userId, otherBranch)));
+    }
+
 }

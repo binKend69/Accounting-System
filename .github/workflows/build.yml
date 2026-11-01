@@ -26,6 +26,14 @@ jobs:
       - run: dotnet restore HisabTak.slnx --locked-mode
       - run: dotnet build HisabTak.slnx --no-restore --configuration Release -m:1 -nr:false
       - run: dotnet test HisabTak.slnx --no-build --no-restore --configuration Release --logger trx
+      - name: Windows WPF smoke
+        if: runner.os == 'Windows'
+        run: dotnet run --project eng/WpfSmoke/WpfSmoke.csproj --configuration Release
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows'
+        with:
+          name: wpf-smoke-screenshots
+          path: artifacts/wpf-smoke/*.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
