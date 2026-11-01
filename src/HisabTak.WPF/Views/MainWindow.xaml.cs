@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using HisabTak.Application.Accounting;
+using HisabTak.Application.Inventory;
 using HisabTak.Application.Security;
 using HisabTak.Domain.Accounting;
 using HisabTak.WPF.ViewModels;
@@ -19,6 +20,32 @@ public partial class MainWindow : Window
     private int? actorId;
     private int? baseCurrencyId;
     private bool busy;
+    private IReadOnlyList<InventoryReference> inventoryLocations = [];
+    private void ClearInventory()
+    {
+        inventoryLocations = []; UnitList.ItemsSource = null; WarehouseBox.ItemsSource = null;
+        LocationList.ItemsSource = null; InventoryNameBox.Clear();
+    }
+    private async Task LoadInventory()
+    {
+        var selected = WarehouseBox.SelectedValue;
+        var data = await Use<IInventorySetupService, InventorySetup>(s => s.LoadAsync(Actor, Branch));
+        inventoryLocations = data.Locations; UnitList.ItemsSource = data.Units; WarehouseBox.ItemsSource = data.Warehouses;
+        WarehouseBox.SelectedValue = selected;
+        if (WarehouseBox.SelectedIndex < 0 && data.Warehouses.Count > 0) WarehouseBox.SelectedIndex = 0;
+        ShowLocations();
+    }
+    private void ShowLocations() => LocationList.ItemsSource = inventoryLocations.Where(x => x.ParentId == (WarehouseBox.SelectedValue as int?)).ToArray();
+    private async void LoadInventory_Click(object sender, RoutedEventArgs e) => await Run(async () => { await LoadInventory(); StatusText.Text = "تم تحميل بيانات المخزون للفرع."; });
+    private async Task CreateInventory(InventoryReferenceKind kind) => await Run(async () =>
+    {
+        await Use<IInventorySetupService, int>(s => s.CreateAsync(Actor, Branch, kind, InventoryNameBox.Text,
+            kind == InventoryReferenceKind.Location ? Selected(WarehouseBox) : null));
+        InventoryNameBox.Clear(); await LoadInventory(); StatusText.Text = "تم الحفظ وتسجيل العملية في سجل التدقيق.";
+    });
+    private async void CreateUnit_Click(object sender, RoutedEventArgs e) => await CreateInventory(InventoryReferenceKind.Unit);
+    private async void CreateWarehouse_Click(object sender, RoutedEventArgs e) => await CreateInventory(InventoryReferenceKind.Warehouse);
+    private async void CreateLocation_Click(object sender, RoutedEventArgs e) => await CreateInventory(InventoryReferenceKind.Location);
     private int page;
     private Guid sourceKey = Guid.NewGuid();
     private JournalDocumentDetails? current;
@@ -42,6 +69,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent(); DataContext = viewModel; this.scopes = scopes; this.logger = logger;
         LinesGrid.ItemsSource = lines; EntryDate.SelectedDate = DateTime.Today; ReversalDate.SelectedDate = DateTime.Today;
+        WarehouseBox.SelectionChanged += (_, _) => ShowLocations();
         UpdateButtons();
         Closing += (_, e) => { if (busy || (actorId is not null && !ConfirmDiscard())) e.Cancel = true; };
     }
@@ -95,6 +123,7 @@ public partial class MainWindow : Window
     private void Logout_Click(object sender, RoutedEventArgs e)
     {
         if (busy || !ConfirmDiscard()) return;
+        ClearInventory();
         actorId = null; current = null; Accounts.Clear(); lines.Clear(); DocumentList.ItemsSource = null; BranchBox.ItemsSource = null;
         baseCurrencyId = null; sourceKey = Guid.NewGuid(); UserLabel.Text = ""; Password.Clear();
         LoginPanel.Visibility = Visibility.Visible; WorkspacePanel.Visibility = Visibility.Collapsed; LogoutButton.Visibility = Visibility.Collapsed;
@@ -102,6 +131,7 @@ public partial class MainWindow : Window
     }
     private async Task LoadBranch()
     {
+        ClearInventory();
         var workspace = await Use<IAccountingWorkspaceService, AccountingWorkspace>(s => s.LoadAsync(Actor, Branch));
         Accounts.Clear(); foreach (var item in workspace.Accounts) Accounts.Add(item);
         baseCurrencyId = workspace.BaseCurrencyId;

@@ -1,4 +1,5 @@
 using HisabTak.Application.Accounting;
+using HisabTak.Application.Inventory;
 using HisabTak.Application.Security;
 using HisabTak.Application.Setup;
 using HisabTak.Domain.Accounting;
@@ -71,6 +72,74 @@ public sealed class LedgerIntegrationTests
             _ => throw new ArgumentOutOfRangeException(nameof(table))
         };
         return await db.Database.SqlQueryRaw<long>(query).SingleAsync();
+    }
+
+    [SqlServerFact]
+    public async Task Inventory_setup_scopes_locations_and_audits_trimmed_names()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        var other = await With<IBranchSetupService, int>(test, x => x.CreateAsync(f.Owner, "Other inventory branch"));
+        var warehouse = await With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Warehouse, "  Main store  "));
+        await With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, other, InventoryReferenceKind.Warehouse, "Main store"));
+        var location = await With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Location, "Shelf A", warehouse));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, other, InventoryReferenceKind.Location, "Wrong branch", warehouse)));
+        var data = await With<IInventorySetupService, InventorySetup>(test, x => x.LoadAsync(f.Owner, f.Branch));
+        Assert.Equal("Main store", Assert.Single(data.Warehouses).Name);
+        Assert.Equal(location, Assert.Single(data.Locations).Id);
+        Assert.Equal(warehouse, data.Locations[0].ParentId);
+        await using var db = test.Context();
+        Assert.Equal(3, await db.AuditLogs.CountAsync(x => x.OperationType == "INVENTORY_REFERENCE_CREATED"));
+        var entity = await db.Warehouses.SingleAsync(x => x.Id == warehouse); entity.SetActive(false); await db.SaveChangesAsync();
+        data = await With<IInventorySetupService, InventorySetup>(test, x => x.LoadAsync(f.Owner, f.Branch));
+        Assert.Empty(data.Warehouses); Assert.Empty(data.Locations);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Location, "Inactive store", warehouse)));
+    }
+
+    [SqlServerFact]
+    public async Task Inventory_setup_serializes_duplicate_names_and_reserves_deleted_names()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        async Task<bool> Create()
+        {
+            try { await With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Unit, "  Box of twelve  ")); return true; }
+            catch (InvalidOperationException) { return false; }
+        }
+        var results = await Task.WhenAll(Create(), Create()); Assert.Single(results.Where(x => x));
+        await using var db = test.Context();
+        var unit = await db.Units.SingleAsync(x => x.NameAr == "Box of twelve"); unit.MarkDeleted(); await db.SaveChangesAsync();
+        Assert.False(await Create());
+        Assert.Equal(1, await db.AuditLogs.CountAsync(x => x.OperationType == "INVENTORY_REFERENCE_CREATED"));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Unit, new string('a', 51))));
+        await Assert.ThrowsAsync<ArgumentException>(() => With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Unit, "Invalid parent", 1)));
+    }
+
+    [SqlServerFact]
+    public async Task Inventory_setup_requires_permission_and_explicit_cross_branch_access()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test); int actor;
+        await using (var db = test.Context())
+        {
+            var user = new HisabTak.Domain.Security.User("inventory-clerk", new HisabTak.Infrastructure.Security.BCryptPasswordHasher().Hash("Test-" + Guid.NewGuid().ToString("N")));
+            db.Users.Add(user); await db.SaveChangesAsync(); actor = user.Id;
+        }
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IInventorySetupService, InventorySetup>(test, x => x.LoadAsync(actor, f.Branch)));
+        await using (var db = test.Context())
+        {
+            var permission = await db.Permissions.SingleAsync(x => x.Code == PermissionCodes.SetupManage);
+            db.UserPermissions.Add(new UserPermission(actor, permission.Id)); await db.SaveChangesAsync();
+        }
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IInventorySetupService, int>(test, x => x.CreateAsync(actor, f.Branch, InventoryReferenceKind.Warehouse, "Denied")));
+        await using var verify = test.Context(); Assert.False(await verify.Warehouses.AnyAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Inventory_setup_rolls_back_reference_when_audit_fails()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        await using (var db = test.Context())
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER dbo.TR_TestInventoryAudit ON dbo.AuditLogs AFTER INSERT AS BEGIN IF EXISTS(SELECT 1 FROM inserted WHERE OperationType='INVENTORY_REFERENCE_CREATED') THROW 51205,'Test failure',1; END");
+        await Assert.ThrowsAnyAsync<Exception>(() => With<IInventorySetupService, int>(test, x => x.CreateAsync(f.Owner, f.Branch, InventoryReferenceKind.Warehouse, "Rollback store")));
+        await using var verify = test.Context(); Assert.False(await verify.Warehouses.AnyAsync());
     }
 
     [SqlServerFact]
