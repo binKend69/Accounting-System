@@ -62,8 +62,10 @@
                     <WrapPanel><ComboBox x:Name="BaseCurrencyBox" DisplayMemberPath="Label" SelectedValuePath="Id"/><Button Content="حفظ عملة الأساس" Click="BaseCurrency_Click"/></WrapPanel>
                     <WrapPanel><ComboBox x:Name="RoundingAccountBox" DisplayMemberPath="Label" SelectedValuePath="Id" Width="280"/><TextBox x:Name="PrecisionBox" Text="2" Width="70" MinWidth="60" ToolTip="دقة عملة الأساس"/><Button Content="حفظ إعداد التقريب" Click="Rounding_Click"/></WrapPanel>
                     <Separator Margin="0,20"/><TextBlock Text="الفترات المالية" FontSize="22"/>
-                    <TextBlock Text="أدخل رقم الفترة الموجودة. الإقفال وإعادة الفتح يتطلبان صلاحيات مستقلة." TextWrapping="Wrap" Margin="0,8"/>
-                    <WrapPanel><TextBox x:Name="PeriodIdBox" Width="100" ToolTip="رقم الفترة"/><Button Content="إقفال الفترة" Click="ClosePeriod_Click"/><Button Content="إعادة فتح الفترة" Click="ReopenPeriod_Click"/></WrapPanel>
+                    <TextBlock Text="اختر الفترة. الإقفال وإعادة الفتح يتطلبان صلاحيات مستقلة." TextWrapping="Wrap" Margin="0,8"/>
+                    <WrapPanel><ComboBox x:Name="PeriodBox" DisplayMemberPath="Label" SelectedValuePath="Id" Width="240" ToolTip="الفترة المالية"/><Button Content="إقفال الفترة" Click="ClosePeriod_Click"/><Button Content="إعادة فتح الفترة" Click="ReopenPeriod_Click"/></WrapPanel>
+                    <TextBlock Text="إنشاء فترة جديدة (لا تتداخل مع فترة قائمة)" Margin="0,14,0,6"/>
+                    <WrapPanel><TextBox x:Name="PeriodNameBox" Width="160" ToolTip="اسم الفترة"/><DatePicker x:Name="PeriodStartBox" Width="140" Margin="4" ToolTip="بداية الفترة"/><DatePicker x:Name="PeriodEndBox" Width="140" Margin="4" ToolTip="نهاية الفترة"/><Button Content="إنشاء الفترة" Click="CreatePeriod_Click"/></WrapPanel>
                 </StackPanel></ScrollViewer></TabItem>
             </TabControl>
         </Grid>

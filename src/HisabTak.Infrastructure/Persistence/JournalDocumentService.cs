@@ -10,7 +10,7 @@ namespace HisabTak.Infrastructure.Persistence;
 
 /// <summary>Owns the transaction; journal posting participates without committing it.</summary>
 public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationService authorization,
-    JournalService journals) : IJournalDocumentService
+    JournalService journals, IEnumerable<IJournalDocumentStrategy> strategies) : IJournalDocumentService
 {
     private readonly SqlLedger sql = new(db);
     private sealed record Line(int AccountId, JournalSide Side, decimal Amount, int CurrencyId,
@@ -154,23 +154,11 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
             : JournalDraft.Create(payload.BranchId, period, payload.Date, payload.SourceKey, lines);
     }
 
-    private async Task ValidateVoucherAsync(JournalDraft draft, string type, CancellationToken ct)
+    private Task ValidateVoucherAsync(JournalDraft draft, string type, CancellationToken ct)
     {
-        if (type is not ("RECEIPT_VOUCHER" or "PAYMENT_VOUCHER")) return;
-        if (draft.Kind != JournalKind.Standard || draft.Lines.Count != 2 || draft.Lines[0].AccountId == draft.Lines[1].AccountId)
-            throw new InvalidOperationException("A cash voucher requires exactly two distinct accounts.");
-        var cashSide = type == "RECEIPT_VOUCHER" ? JournalSide.Debit : JournalSide.Credit;
-        var cash = draft.Lines.SingleOrDefault(l => l.Side == cashSide) ?? throw new InvalidOperationException("Cash voucher side is invalid.");
-        var other = draft.Lines.Single(l => l != cash);
-        if (cash.Valuation.Original.CurrencyId != other.Valuation.Original.CurrencyId
-            || cash.Valuation.Original.Amount != other.Valuation.Original.Amount
-            || cash.Valuation.RateToBase != other.Valuation.RateToBase)
-            throw new InvalidOperationException("Basic cash vouchers require matching currencies and rates; debt settlements use their own workflow.");
-        var valid = await (from a in db.Accounts.AsNoTracking()
-            join g in db.AccountGeneralGroups.AsNoTracking() on a.GeneralGroupId equals g.Id
-            where a.Id == cash.AccountId && a.BranchId == draft.BranchId && a.IsActive && !a.IsSuspended
-                && g.IsActive && (g.SystemCode == "CASH" || g.SystemCode == "BANK") select a.Id).AnyAsync(ct);
-        if (!valid) throw new InvalidOperationException("The cash side requires an active cash or bank account in this branch.");
+        var strategy = strategies.SingleOrDefault(s => s.TypeCode == type)
+            ?? throw new InvalidOperationException("Unsupported document strategy.");
+        return strategy.ValidateAsync(draft, ct);
     }
 
     public async Task<JournalDocument> UpdateDraftAsync(int actorId, long documentId, int expectedVersion, JournalDraft draft, CancellationToken cancellationToken = default)

@@ -11,7 +11,7 @@ internal sealed class SmokeWorkspace : IAccountingWorkspaceService
 {
     public Task<AccountingWorkspace> LoadAsync(int actorId, int? branchId, CancellationToken cancellationToken = default) =>
         Task.FromResult(new AccountingWorkspace([new(1,"الفرع التجريبي")], [new(1,"101 — صندوق",1,1),new(2,"201 — حساب مقابل",1,null)],
-            [new(1,"YER — ريال يمني")], [new(1,"الأصول")], [new(1,"صناديق")], 1));
+            [new(1,"YER — ريال يمني")], [new(1,"الأصول")], [new(1,"صناديق")], 1, [new(1,"2026 — مفتوحة")]));
 }
 internal sealed class SmokeDocuments : IJournalDocumentService
 {

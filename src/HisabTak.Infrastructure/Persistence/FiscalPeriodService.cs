@@ -1,12 +1,29 @@
 using HisabTak.Application.Accounting;
 using HisabTak.Application.Security;
 using HisabTak.Domain.Security;
+using HisabTak.Domain.Accounting;
 using Microsoft.EntityFrameworkCore;
 
 namespace HisabTak.Infrastructure.Persistence;
 
 public sealed class FiscalPeriodService(HisabTakDbContext database, IAuthorizationService authorization) : IFiscalPeriodService
 {
+    public async Task<int> CreateAsync(int actorId, string name, DateOnly start, DateOnly end, CancellationToken cancellationToken = default)
+    {
+        var period = new FiscalPeriod(name, start, end);
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        await DatabaseLock.AcquireAsync(database, "HisabTak.Accounting.Periods", cancellationToken);
+        await authorization.DemandAsync(actorId, PermissionCodes.SetupManage, cancellationToken);
+        if (await database.FiscalPeriods.AnyAsync(x => x.IsActive && x.StartDate <= end && x.EndDate >= start, cancellationToken))
+            throw new InvalidOperationException("Operational periods cannot overlap.");
+        database.FiscalPeriods.Add(period);
+        await database.SaveChangesAsync(cancellationToken);
+        database.AuditLogs.Add(new AuditLog(actorId, "FISCAL_PERIOD_CREATED", "FiscalPeriods", period.Id, Environment.MachineName));
+        await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return period.Id;
+    }
+
     public Task CloseAsync(int actorId, int periodId, CancellationToken cancellationToken = default) =>
         ChangeStateAsync(actorId, periodId, close: true, cancellationToken);
 

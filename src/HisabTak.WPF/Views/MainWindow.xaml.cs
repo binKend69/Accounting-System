@@ -105,6 +105,7 @@ public partial class MainWindow : Window
         var workspace = await Use<IAccountingWorkspaceService, AccountingWorkspace>(s => s.LoadAsync(Actor, Branch));
         Accounts.Clear(); foreach (var item in workspace.Accounts) Accounts.Add(item);
         baseCurrencyId = workspace.BaseCurrencyId;
+        PeriodBox.ItemsSource = workspace.Periods;
         GroupBox.ItemsSource = workspace.Groups; CurrencyBox.ItemsSource = workspace.Currencies;
         GeneralGroupBox.ItemsSource = workspace.GeneralGroups; BaseCurrencyBox.ItemsSource = workspace.Currencies;
         BaseCurrencyBox.SelectedValue = baseCurrencyId; RoundingAccountBox.ItemsSource = Accounts;
@@ -219,9 +220,15 @@ public partial class MainWindow : Window
     });
     private async Task Period(bool close)
     {
-        if (!int.TryParse(PeriodIdBox.Text, out var id) || id <= 0) throw new InputException("أدخل رقم فترة صحيحًا.");
-        await Change<IFiscalPeriodService>(s => close ? s.CloseAsync(Actor, id) : s.ReopenAsync(Actor, id)); StatusText.Text = close ? "أُقفلت الفترة." : "أُعيد فتح الفترة.";
+        var id = Selected(PeriodBox);
+        await Change<IFiscalPeriodService>(s => close ? s.CloseAsync(Actor, id) : s.ReopenAsync(Actor, id)); await LoadBranch(); StatusText.Text = close ? "أُقفلت الفترة." : "أُعيد فتح الفترة.";
     }
+    private async void CreatePeriod_Click(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        if (PeriodStartBox.SelectedDate is not DateTime start || PeriodEndBox.SelectedDate is not DateTime end) throw new InputException("حدد بداية الفترة ونهايتها.");
+        await Change<IFiscalPeriodService>(s => s.CreateAsync(Actor, PeriodNameBox.Text, DateOnly.FromDateTime(start), DateOnly.FromDateTime(end)));
+        await LoadBranch(); StatusText.Text = "تم إنشاء الفترة المالية.";
+    });
     private async void ClosePeriod_Click(object sender, RoutedEventArgs e) => await Run(() => Period(true));
     private async void ReopenPeriod_Click(object sender, RoutedEventArgs e) => await Run(() => Period(false));
     private void UpdateButtons()

@@ -30,6 +30,14 @@ jobs:
         timeout-minutes: 3
         if: runner.os == 'Windows'
         run: dotnet run --project eng/WpfSmoke/WpfSmoke.csproj --configuration Release
+      - name: Package Windows review build
+        if: runner.os == 'Windows'
+        run: dotnet publish src/HisabTak.WPF/HisabTak.WPF.csproj --configuration Release --no-restore --output artifacts/windows-preview
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: HisabTak-Windows-preview
+          path: artifacts/windows-preview/
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Windows'
         with:

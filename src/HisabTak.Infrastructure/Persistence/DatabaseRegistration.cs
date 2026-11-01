@@ -1,4 +1,5 @@
 using HisabTak.Application.Security;
+using HisabTak.Domain.Accounting;
 using HisabTak.Application.Accounting;
 using HisabTak.Application.Setup;
 using HisabTak.Application.Backup;
@@ -35,6 +36,9 @@ public static class DatabaseRegistration
         services.AddScoped<IChartOfAccountsService, ChartOfAccountsService>();
         services.AddScoped<JournalService>();
         services.AddScoped<IJournalService>(provider => provider.GetRequiredService<JournalService>());
+        foreach (var (code, kind) in new[] { ("JOURNAL_VOUCHER", JournalKind.Standard), ("JOURNAL_OPENING", JournalKind.Opening),
+            ("RECEIPT_VOUCHER", JournalKind.Standard), ("PAYMENT_VOUCHER", JournalKind.Standard) })
+            services.AddScoped<IJournalDocumentStrategy>(provider => new JournalDocumentStrategy(provider.GetRequiredService<HisabTakDbContext>(), code, kind));
         services.AddScoped<IJournalDocumentService, JournalDocumentService>();
         services.AddScoped<IAccountingWorkspaceService, AccountingWorkspaceService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();

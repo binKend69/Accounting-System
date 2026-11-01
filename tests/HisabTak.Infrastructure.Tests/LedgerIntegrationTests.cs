@@ -602,4 +602,17 @@ public sealed class LedgerIntegrationTests
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IAccountingWorkspaceService, AccountingWorkspace>(test, s => s.LoadAsync(userId, otherBranch)));
     }
 
+    [SqlServerFact]
+    public async Task Period_setup_from_workspace_is_authorized_audited_and_rejects_overlap()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync(); var f = await SetupAsync(test);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => With<IFiscalPeriodService, int>(test, s => s.CreateAsync(0, "2027", new(2027,1,1), new(2027,12,31))));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IFiscalPeriodService, int>(test, s => s.CreateAsync(f.Owner, "Overlap", Date, Date.AddDays(1))));
+        var id = await With<IFiscalPeriodService, int>(test, s => s.CreateAsync(f.Owner, "2027", new(2027,1,1), new(2027,12,31)));
+        var workspace = await With<IAccountingWorkspaceService, AccountingWorkspace>(test, s => s.LoadAsync(f.Owner, f.Branch));
+        Assert.Contains(workspace.Periods, p => p.Id == id);
+        await using var db = test.Context();
+        Assert.Single(await db.AuditLogs.Where(x => x.OperationType == "FISCAL_PERIOD_CREATED" && x.RecordId == id).ToListAsync());
+    }
+
 }

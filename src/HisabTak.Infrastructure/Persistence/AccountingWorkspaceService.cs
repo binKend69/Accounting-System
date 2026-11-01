@@ -27,6 +27,8 @@ public sealed class AccountingWorkspaceService(HisabTakDbContext db, IAuthorizat
             await db.Currencies.AsNoTracking().Where(x => x.IsActive).Select(x => new AccountingLookup(x.Id, x.Code + " — " + x.NameAr)).ToListAsync(cancellationToken),
             await db.AccountMainGroups.AsNoTracking().Where(x => x.IsActive).Select(x => new AccountingLookup(x.Id, x.Code + " — " + x.NameAr)).ToListAsync(cancellationToken),
             await db.AccountGeneralGroups.AsNoTracking().Where(x => x.IsActive).Select(x => new AccountingLookup(x.Id, x.NameAr)).ToListAsync(cancellationToken),
-            await db.Companies.AsNoTracking().Where(x => x.IsActive).Select(x => x.BaseCurrencyId).SingleOrDefaultAsync(cancellationToken));
+            await db.Companies.AsNoTracking().Where(x => x.IsActive).Select(x => x.BaseCurrencyId).SingleOrDefaultAsync(cancellationToken),
+            await db.FiscalPeriods.AsNoTracking().Where(x => x.IsActive).OrderByDescending(x => x.StartDate)
+                .Select(x => new FiscalPeriodLookup(x.Id, x.NameAr + (x.IsClosed ? " — مغلقة" : " — مفتوحة"))).ToListAsync(cancellationToken));
     }
 }
