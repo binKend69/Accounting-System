@@ -9,7 +9,8 @@ public partial class EditableDocumentsAndVouchers : Migration
         migrationBuilder.Sql("""
             ALTER TABLE dbo.JournalDocuments ADD Version int NOT NULL CONSTRAINT DF_JournalDocuments_Version DEFAULT 1 CHECK(Version>0);
             DECLARE @constraint sysname=(SELECT name FROM sys.check_constraints WHERE parent_object_id=OBJECT_ID('dbo.JournalDocuments') AND definition LIKE '%TypeCode%');
-            IF @constraint IS NOT NULL EXEC('ALTER TABLE dbo.JournalDocuments DROP CONSTRAINT '+QUOTENAME(@constraint));
+            DECLARE @statement nvarchar(max)='ALTER TABLE dbo.JournalDocuments DROP CONSTRAINT '+QUOTENAME(@constraint);
+            IF @constraint IS NOT NULL EXEC(@statement);
             ALTER TABLE dbo.JournalDocuments ADD CONSTRAINT CK_JournalDocuments_Types CHECK(TypeCode IN ('JOURNAL_VOUCHER','JOURNAL_OPENING','RECEIPT_VOUCHER','PAYMENT_VOUCHER'));
             """);
         migrationBuilder.Sql("""
@@ -71,7 +72,8 @@ public partial class EditableDocumentsAndVouchers : Migration
             """);
         migrationBuilder.Sql("""
             DECLARE @constraint sysname=(SELECT name FROM sys.check_constraints WHERE parent_object_id=OBJECT_ID('dbo.JournalDocuments') AND definition LIKE '%Version%');
-            IF @constraint IS NOT NULL EXEC('ALTER TABLE dbo.JournalDocuments DROP CONSTRAINT '+QUOTENAME(@constraint));
+            DECLARE @statement nvarchar(max)='ALTER TABLE dbo.JournalDocuments DROP CONSTRAINT '+QUOTENAME(@constraint);
+            IF @constraint IS NOT NULL EXEC(@statement);
             ALTER TABLE dbo.JournalDocuments DROP CONSTRAINT DF_JournalDocuments_Version,CK_JournalDocuments_Types;
             ALTER TABLE dbo.JournalDocuments DROP COLUMN Version;
             ALTER TABLE dbo.JournalDocuments ADD CHECK(TypeCode IN ('JOURNAL_VOUCHER','JOURNAL_OPENING'));

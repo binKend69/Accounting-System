@@ -1,8 +1,12 @@
 using System.Windows;
+using System.Collections.ObjectModel;
+using System.IO;
+using HisabTak.Application.Accounting;
+using HisabTak.Application.Security;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using HisabTak.Application;
+using ApplicationIdentity = HisabTak.Application.ApplicationIdentity;
 using HisabTak.WPF.ViewModels;
 using HisabTak.WPF.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,8 +40,52 @@ internal static class Program
         window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         if (!((TextBlock)window.FindName("StatusText")).Text.Contains("لم يضبط اتصال"))
             throw new InvalidOperationException("Missing-connection login must fail visibly and safely.");
-        window.Close(); app.Shutdown();
-        Console.WriteLine("WPF smoke passed: XAML construction, RTL, authenticated workspace gate, two window sizes, safe missing-connection login.");
+        window.Close();
+        var documents = new SmokeDocuments();
+        using var authenticated = new ServiceCollection().AddLogging()
+            .AddSingleton<IAuthenticationService, SmokeAuthentication>().AddSingleton<IAccountingWorkspaceService, SmokeWorkspace>()
+            .AddSingleton<IJournalDocumentService>(documents).BuildServiceProvider();
+        MainWindow OpenAuthenticated()
+        {
+            var w = new MainWindow(new MainWindowViewModel(new ApplicationIdentity("HisabTak","smoke")),
+                authenticated.GetRequiredService<IServiceScopeFactory>(), authenticated.GetRequiredService<ILogger<MainWindow>>());
+            w.Show(); ((TextBox)w.FindName("Username")).Text="smoke"; ((PasswordBox)w.FindName("Password")).Password="smoke-only";
+            Click(w,"LoginButton");
+            if (((FrameworkElement)w.FindName("WorkspacePanel")).Visibility!=Visibility.Visible) throw new InvalidOperationException("Login did not open the workspace.");
+            return w;
+        }
+        var editor = OpenAuthenticated();
+        var rows = (ObservableCollection<MainWindow.EditorLine>)((DataGrid)editor.FindName("LinesGrid")).ItemsSource;
+        rows.Add(new() { AccountId=1,Side="1",Amount="100.25",Rate="1" });
+        rows.Add(new() { AccountId=2,Side="2",Amount="100.25",Rate="1" });
+        editor.UpdateLayout(); Click(editor,"SaveButton");
+        if (documents.Stored?.Draft.Lines.Count!=2 || documents.Stored.Draft.Lines[0].Valuation.Original.Amount!=100.25m)
+            throw new InvalidOperationException("Editor did not save the reviewed line values.");
+        if (!((Button)editor.FindName("PostButton")).IsEnabled || !((Button)editor.FindName("PrintButton")).IsEnabled)
+            throw new InvalidOperationException("Saved draft actions are unavailable.");
+        Capture(editor,"workspace-draft"); editor.Close();
+        documents.MarkPosted();
+        var history = OpenAuthenticated(); ((ListBox)history.FindName("DocumentList")).SelectedIndex=0;
+        Click(history,"OpenDocumentButton");
+        if (((DataGrid)history.FindName("LinesGrid")).IsEnabled || ((Button)history.FindName("SaveButton")).IsEnabled
+            || ((Button)history.FindName("PostButton")).IsEnabled || !((Button)history.FindName("ReverseButton")).IsEnabled)
+            throw new InvalidOperationException("Posted document editing was not disabled.");
+        if (documents.PostCalls!=0) throw new InvalidOperationException("Reading or saving a draft must not post.");
+        Capture(history,"workspace-posted"); history.Close(); app.Shutdown();
+        Console.WriteLine("WPF smoke passed: XAML construction, RTL, authenticated workspace gate, two window sizes, safe missing-connection login, authenticated editor save and immutable posted view (stub services).");
+    }
+    private static void Click(Window window,string name)
+    {
+        ((Button)window.FindName(name)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        window.UpdateLayout();
+    }
+    private static void Capture(Window window,string name)
+    {
+        window.UpdateLayout();
+        var image=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32); image.Render(window);
+        var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+        using var stream=File.Create($"artifacts/wpf-smoke/{name}.png"); encoder.Save(stream);
     }
     private static Button FindButton(DependencyObject root)
     {

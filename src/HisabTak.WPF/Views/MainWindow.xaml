@@ -19,7 +19,7 @@
             <StackPanel><TextBlock Text="تسجيل الدخول" FontSize="25" FontWeight="SemiBold" Margin="0,0,0,20"/>
                 <TextBlock Text="اسم المستخدم"/><TextBox x:Name="Username" AutomationProperties.Name="اسم المستخدم"/>
                 <TextBlock Text="كلمة المرور" Margin="0,12,0,0"/><PasswordBox x:Name="Password" Padding="10" Margin="4" AutomationProperties.Name="كلمة المرور"/>
-                <Button Content="دخول" Click="Login_Click" Background="#155E75" Foreground="White" Margin="4,20,4,4" IsDefault="True"/>
+                <Button x:Name="LoginButton" Content="دخول" Click="Login_Click" Background="#155E75" Foreground="White" Margin="4,20,4,4" IsDefault="True"/>
                 <TextBlock Text="تُستخدم قاعدة المنشأة المحددة في إعدادات الاتصال." TextWrapping="Wrap" Foreground="#576579" Margin="4,12"/>
             </StackPanel>
         </Border>
@@ -34,7 +34,7 @@
                             <ListBox x:Name="DocumentList" Grid.Row="1" Margin="4" MouseDoubleClick="Open_Click" AutomationProperties.Name="المستندات">
                                 <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="8"><TextBlock Text="{Binding Caption}" FontWeight="SemiBold"/><TextBlock Text="{Binding Subtitle}" Foreground="#576579" Margin="0,4,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
                             </ListBox>
-                            <StackPanel Grid.Row="2" Orientation="Horizontal"><Button Content="فتح المحدد" Click="Open_Click"/><Button Content="السابق" Click="Previous_Click"/><Button Content="التالي" Click="Next_Click"/></StackPanel>
+                            <StackPanel Grid.Row="2" Orientation="Horizontal"><Button x:Name="OpenDocumentButton" Content="فتح المحدد" Click="Open_Click"/><Button Content="السابق" Click="Previous_Click"/><Button Content="التالي" Click="Next_Click"/></StackPanel>
                         </Grid>
                         <Grid Grid.Column="1" Margin="18,0,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <TextBlock x:Name="DocumentTitle" Text="مستند جديد" FontSize="22" FontWeight="SemiBold" Foreground="#153A4A"/>

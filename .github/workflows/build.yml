@@ -27,6 +27,7 @@ jobs:
       - run: dotnet build HisabTak.slnx --no-restore --configuration Release -m:1 -nr:false
       - run: dotnet test HisabTak.slnx --no-build --no-restore --configuration Release --logger trx
       - name: Windows WPF smoke
+        timeout-minutes: 3
         if: runner.os == 'Windows'
         run: dotnet run --project eng/WpfSmoke/WpfSmoke.csproj --configuration Release
       - uses: actions/upload-artifact@v4

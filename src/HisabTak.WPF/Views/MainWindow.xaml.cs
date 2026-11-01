@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         InitializeComponent(); DataContext = viewModel; this.scopes = scopes; this.logger = logger;
         LinesGrid.ItemsSource = lines; EntryDate.SelectedDate = DateTime.Today; ReversalDate.SelectedDate = DateTime.Today;
         UpdateButtons();
+        Closing += (_, e) => { if (busy || (actorId is not null && !ConfirmDiscard())) e.Cancel = true; };
     }
     private int Actor => actorId ?? throw new InputException("سجل الدخول أولاً.");
     private int Branch => BranchBox.SelectedValue is int id ? id : throw new InputException("اختر الفرع أولاً.");
@@ -118,8 +119,19 @@ public partial class MainWindow : Window
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await Run(async () => { await RefreshList(); StatusText.Text = "تم تحديث القائمة. انقر مرتين على المستند لفتحه."; });
     private async void Previous_Click(object sender, RoutedEventArgs e) => await Run(async () => { page = Math.Max(0, page - 1); await RefreshList(); StatusText.Text = $"صفحة {page + 1}"; });
     private async void Next_Click(object sender, RoutedEventArgs e) => await Run(async () => { page++; await RefreshList(); StatusText.Text = $"صفحة {page + 1}"; });
-    private bool ConfirmDiscard() => lines.Count == 0 || current?.Document.State != JournalDocumentState.Draft && current is not null ||
-        MessageBox.Show("قد توجد تعديلات غير محفوظة في المحرر. هل تريد تركها؟", "تأكيد", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+    private bool HasUnsavedChanges()
+    {
+        if (current is null) return lines.Count > 0;
+        if (current.Document.State != JournalDocumentState.Draft) return false;
+        try
+        {
+            var draft = BuildDraft();
+            return draft.EntryDate != current.Draft.EntryDate || !draft.Lines.SequenceEqual(current.Draft.Lines);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or InputException) { return true; }
+    }
+    private bool ConfirmDiscard() => !HasUnsavedChanges() ||
+        MessageBox.Show("توجد تعديلات غير محفوظة في المحرر. هل تريد تركها؟", "تأكيد", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
     private void ResetEditor()
     {
         current = null; sourceKey = Guid.NewGuid(); lines.Clear(); EntryDate.SelectedDate = DateTime.Today;
