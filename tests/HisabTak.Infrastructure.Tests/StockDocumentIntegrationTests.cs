@@ -137,6 +137,16 @@ public sealed partial class LedgerIntegrationTests
         Assert.Equal(300,(await Debts(test,s)).Single(x=>x.DocumentId==sale.Id).RemainingAmount);
     }
     [SqlServerFact]
+    public async Task Standalone_journal_cannot_claim_an_unrelated_historical_allocation()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var f=await SetupAsync(test);
+        var draft=f.Draft();
+        await using(var db=test.Context())await db.Database.ExecuteSqlInterpolatedAsync($"INSERT dbo.StockBookBasis(SourceKey,AccountId,Principal,BookValue) VALUES({draft.SourceKey},{f.Debit},100,0.01)");
+        var error=await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(()=>Post(test,f,draft));
+        Assert.Equal(51159,error.Number);Assert.Equal(0,await Count(test,"JournalEntries"));
+    }
+
+    [SqlServerFact]
     public async Task Foreign_invoice_and_final_settlement_reconcile_principal_book_and_realized_exchange()
     {
         await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);var f=s.F;

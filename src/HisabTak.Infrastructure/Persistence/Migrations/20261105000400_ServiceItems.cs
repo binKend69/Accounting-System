@@ -8,8 +8,8 @@ public partial class ServiceItems : Migration
     {
         m.Sql("""
             CREATE TABLE dbo.StockServiceItems(ProductId int PRIMARY KEY REFERENCES dbo.StockProducts(ProductId));
-            ALTER TABLE dbo.StockMovements ADD BilledQuantity decimal(28,8) NULL
-                CHECK(BilledQuantity IS NULL OR (BilledQuantity>0 AND Quantity=0 AND Value=0 AND BatchId IS NULL));
+            ALTER TABLE dbo.StockMovements ADD BilledQuantity decimal(28,8) NULL;
+            ALTER TABLE dbo.StockMovements ADD CONSTRAINT CK_StockMovements_BilledQuantity CHECK(BilledQuantity IS NULL OR (BilledQuantity>0 AND Quantity=0 AND Value=0 AND BatchId IS NULL));
             """);
         m.Sql("CREATE TRIGGER dbo.TR_StockServiceItems_Immutable ON dbo.StockServiceItems AFTER UPDATE,DELETE AS BEGIN SET NOCOUNT ON; THROW 51155,'Item tracking cannot change.',1; END");
         m.Sql("""

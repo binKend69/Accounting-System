@@ -232,7 +232,7 @@ public sealed partial class StockDocumentService
             var draft=JournalDraft.Create(d.BranchId,new FiscalPeriod("Stock",d.Date,d.Date),d.Date,d.SourceKey,lines);
             var offsets=d.Credit && IsReturn(d.Kind)?await ReturnOffsets(d,effects,baseId,precision,ct):[];
             if(offsets.Count>0 && d.CurrencyId!=baseId)
-                await SaveBasis(d.SourceKey,d.CounterpartyAccountId,net+tax,offsets.Sum(x=>x.Book+x.RefundBook),null,ct);
+                await SaveBasis(d.SourceKey,d.CounterpartyAccountId,net+tax,offsets.Sum(x=>x.Book+x.RefundBook),null,offsets,ct);
             var journal=await journals.PostDocumentAsync(actor,draft,ct);
             var number=await sql.ScalarAsync("""
                 UPDATE dbo.DocumentNumbers SET LastNumber=LastNumber+1 WHERE BranchId=@b AND TypeCode=@t AND DocumentYear=@y;

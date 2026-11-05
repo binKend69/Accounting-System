@@ -39,8 +39,13 @@ public sealed partial class StockDocumentService
         }
         return result;
     }
-    private Task SaveBasis(Guid source,int account,decimal amount,decimal book,byte[]? signature,CancellationToken ct) =>
-        sql.ExecuteAsync("INSERT dbo.StockBookBasis VALUES(@k,@a,@p,@b,@h)",ct,("@k",source),("@a",account),("@p",amount),("@b",book),("@h",signature));
+    private async Task SaveBasis(Guid source,int account,decimal amount,decimal book,byte[]? signature,List<ReturnOffset> origins,CancellationToken ct)
+    {
+        await sql.ExecuteAsync("INSERT dbo.StockBookBasis VALUES(@k,@a,@p,@b,@h)",ct,("@k",source),("@a",account),("@p",amount),("@b",book),("@h",signature));
+        foreach(var origin in origins)
+            await sql.ExecuteAsync("INSERT dbo.StockBasisOrigins VALUES(@k,@i,@a,@b,@r,@rb)",ct,("@k",source),("@i",origin.Invoice),
+                ("@a",origin.Principal),("@b",origin.Book),("@r",origin.Refund),("@rb",origin.RefundBook));
+    }
     private async Task RecordDebt(StockDocument doc,List<LineEffect> effects,long journal,List<ReturnOffset> offsets,int precision,CancellationToken ct)
     {
         var d=doc.Draft; var total=effects.Sum(x=>x.Net+x.Tax);
@@ -110,7 +115,7 @@ public sealed partial class StockDocumentService
             if(exchange.Gain.Amount>0) lines.Add(new(settings.FxGainAccountId??throw new InvalidOperationException("Configure FX gain account."),JournalSide.Credit,new(exchange.Gain,baseId,1,payment.Date)));
             if(exchange.Loss.Amount>0) lines.Add(new(settings.FxLossAccountId??throw new InvalidOperationException("Configure FX loss account."),JournalSide.Debit,new(exchange.Loss,baseId,1,payment.Date)));
             var proposal=JournalDraft.Create(d.BranchId,new FiscalPeriod("Settlement",payment.Date,payment.Date),payment.Date,payment.SourceKey,lines);
-            await SaveBasis(payment.SourceKey,debt.AccountId,payment.Amount,book.Amount,JournalDocumentStrategy.SettlementSignature(proposal),ct);
+            await SaveBasis(payment.SourceKey,debt.AccountId,payment.Amount,book.Amount,JournalDocumentStrategy.SettlementSignature(proposal),[new(invoice.Id,payment.Amount,book.Amount,0,0)],ct);
             var voucher=await vouchers.SaveVoucherAsync(actor,proposal,debt.Receivable?"RECEIPT_VOUCHER":"PAYMENT_VOUCHER",ct);
             var posted=await vouchers.PostVersionAsync(actor,voucher.Id,voucher.Version,ct);
             var journal=posted.JournalId!.Value;
