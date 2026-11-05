@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using HisabTak.Application.Accounting;
 using HisabTak.Application.Inventory;
 using HisabTak.Domain.Inventory;
@@ -123,7 +124,7 @@ public partial class StockWindow : Window
     private bool Discard()=>!Dirty() || MessageBox.Show(this,"ترك تعديلات المستند غير المحفوظة؟","تأكيد",MessageBoxButton.YesNo)==MessageBoxResult.Yes;
     private void Buttons()
     {
-        SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
+        PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
         foreach(var control in new Control[]{Warehouse,Target,Party,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
         Kind.IsEnabled=current==null;
     }
@@ -150,6 +151,29 @@ public partial class StockWindow : Window
     private async void Save(object sender,RoutedEventArgs e)=>await Run(async()=>{
         var draft=Build();var doc=current==null?await Use(s=>s.SaveAsync(actor,draft)):await Use(s=>s.UpdateAsync(actor,current.Id,current.Version,draft));
         ShowDocument(doc);await RefreshLists();Status.Text="حفظت المسودة.";
+    });
+    private async void Preview(object sender,RoutedEventArgs e)=>await Run(async()=>
+    {
+        if(current==null)return;
+        var saved=await Use(s=>s.GetAsync(actor,current.Id));var d=saved.Draft;
+        var page=new FlowDocument {FlowDirection=FlowDirection.RightToLeft,FontFamily=FontFamily,FontSize=15};
+        void Row(string text)=>page.Blocks.Add(new Paragraph(new Run(text)));
+        Row(Kinds.Single(k=>k.Id==(int)d.Kind).Label+" · "+(saved.Number?.ToString()??"مسودة"));
+        Row($"الفرع {branch} · {d.Date:yyyy-MM-dd} · {(saved.State==1?"مسودة":saved.State==2?"مرحل":"معكوس")} · العملة {d.CurrencyId}");
+        if(d.CounterpartyAccountId>0)Row("حساب الطرف · "+(accounts.FirstOrDefault(a=>a.Id==d.CounterpartyAccountId)?.Label??d.CounterpartyAccountId.ToString()));
+        for(var i=0;i<d.Lines.Count;i++)
+        {
+            var l=d.Lines[i];Row($"{Product(l.ProductId)} · {l.Quantity:G29} {UnitName(l.UnitId)} · السعر {l.UnitPrice:G29} · الخصم {l.Discount:G29}");
+            if(l.OriginalMovementId!=null)Row($"الحركة الأصلية {l.OriginalMovementId}");
+            foreach(var m in saved.Movements.Where(m=>m.LineNumber==i))
+                Row($"حركة {m.Id} · مستودع {m.WarehouseId} · دفعة {m.BatchId?.ToString()??"—"} · كمية {m.Quantity:G29} · أثر دفتري {m.Value:G29}");
+        }
+        if(saved.State>=2 && d.Kind is StockDocumentKind.Sale or StockDocumentKind.Purchase or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn)
+        {
+            var net=saved.Movements.Sum(x=>x.Net);var tax=saved.Movements.Sum(x=>x.Tax);
+            Row($"الصافي {net:G29} · الضريبة {tax:G29} · الإجمالي {net+tax:G29}");
+        }
+        new Window { Owner=this,Title="معاينة النسخة المحفوظة",Width=780,Height=640,Content=new FlowDocumentReader {Document=page} }.ShowDialog();
     });
     private async void Post(object sender,RoutedEventArgs e)=>await Run(async()=>{
         if(current==null || Dirty()){Status.Text="احفظ التعديلات قبل الترحيل.";return;}

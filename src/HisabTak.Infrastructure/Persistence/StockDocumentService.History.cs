@@ -45,16 +45,24 @@ public sealed partial class StockDocumentService
             await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@v)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.Sale),("@v",total));
             return;
         }
+        decimal refundable=0;
         foreach(var group in effects.GroupBy(x=>x.Invoice!.Value))
         {
             var debt=(await ReadDebts(d.BranchId,ct)).Single(x=>x.DocumentId==group.Key);
             var value=group.Sum(x=>x.Net+x.Tax);
-            if(value<=0 || value>debt.RemainingAmount) throw new InvalidOperationException("Return exceeds outstanding invoice. Reverse the affected settlement first.");
+            if(value<=0) throw new InvalidOperationException("Return amount must be positive.");
+            var offset=Math.Min(value,debt.RemainingAmount);
+            refundable+=value-offset;
+            if(offset==0) continue;
             await sql.ExecuteAsync("""
                 INSERT dbo.StockDebtAllocations(InvoiceId,SourceKey,ReturnDocumentId,JournalId,Amount,BookValue,Payload)
                 VALUES(@i,NEWID(),@return,@j,@v,@v,@p)
-                """,ct,("@i",group.Key),("@return",doc.Id),("@j",journal),("@v",value),("@p",JsonSerializer.Serialize(new { doc.Id })));
+                """,ct,("@i",group.Key),("@return",doc.Id),("@j",journal),("@v",offset),("@p",JsonSerializer.Serialize(new { doc.Id })));
         }
+        // A paid invoice can still be returned. The excess is now owed in the opposite direction.
+        if(refundable>0)
+            await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@v)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),
+                ("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.PurchaseReturn),("@v",refundable));
     }
     public Task<long> SettleAsync(int actor,DebtPayment payment,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,async () =>

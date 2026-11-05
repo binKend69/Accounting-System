@@ -66,6 +66,24 @@ public sealed partial class LedgerIntegrationTests
         Assert.Equal(300,(await Debts(test,s)).Single(x=>x.DocumentId==sale.Id).RemainingAmount);
     }
     [SqlServerFact]
+    public async Task Paid_credit_invoice_return_creates_refund_and_payment_voucher()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync(); var s=await StoreAsync(test);
+        await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,4,100)));
+        var sale=await Trade(test,s,Draft(s,StockDocumentKind.Sale,s.Customer,new StockLine(s.Product,s.Unit,2,110)) with
+            {TaxEnabled=true,TaxRate=0.1m,PricesIncludeTax=true});
+        Assert.Equal(200,sale.Movements[0].Net); Assert.Equal(20,sale.Movements[0].Tax);
+        await With<IStockDocumentService,long>(test,x=>x.SettleAsync(s.F.Owner,new(Guid.NewGuid(),sale.Id,Date,220,s.Cash)));
+        var returned=await Trade(test,s,Draft(s,StockDocumentKind.SalesReturn,s.Customer,new StockLine(s.Product,s.Unit,1,OriginalMovementId:sale.Movements[0].Id)));
+        var refund=(await Debts(test,s)).Single(x=>x.DocumentId==returned.Id);
+        Assert.False(refund.Receivable); Assert.Equal(110,refund.RemainingAmount);
+        var journal=await With<IStockDocumentService,long>(test,x=>x.SettleAsync(s.F.Owner,new(Guid.NewGuid(),returned.Id,Date,110,s.Cash)));
+        Assert.Equal(0,(await Debts(test,s)).Single(x=>x.DocumentId==returned.Id).RemainingAmount);
+        var vouchers=await With<IJournalDocumentService,IReadOnlyList<JournalDocument>>(test,x=>x.ListAsync(s.F.Owner,s.F.Branch));
+        Assert.Contains(vouchers,x=>x.TypeCode=="PAYMENT_VOUCHER" && x.JournalId==journal);
+    }
+
+    [SqlServerFact]
     public async Task Stock_fefo_splits_by_expiry_transfers_value_and_rejects_expired_or_backdated_issue()
     {
         await using var test=await SqlTestDatabase.CreateAsync(); var s=await StoreAsync(test,true);
