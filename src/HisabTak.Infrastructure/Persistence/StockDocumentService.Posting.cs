@@ -132,7 +132,7 @@ public sealed partial class StockDocumentService
         bool increase=d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Opening or StockDocumentKind.Increase or StockDocumentKind.SalesReturn;
         if(increase)
         {
-            if(d.Kind==StockDocumentKind.Opening && await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockMovements WHERE WarehouseId=@w AND ProductId=@p",ct,("@w",d.WarehouseId),("@p",l.ProductId))>0)
+            if(d.Kind==StockDocumentKind.Opening && await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockMovements WHERE WarehouseId=@w AND ProductId=@p AND DocumentId<>@i",ct,("@w",d.WarehouseId),("@p",l.ProductId),("@i",document.Id))>0)
                 throw new InvalidOperationException("Opening must be the first movement.");
             var batch=originalBatch??l.BatchId;
             if(item.Item2!=(batch!=null) || batch!=null && await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockBatches WHERE BatchId=@b AND ProductId=@p AND WarehouseId=@w",ct,("@b",batch),("@p",l.ProductId),("@w",d.WarehouseId))!=1)
@@ -143,7 +143,9 @@ public sealed partial class StockDocumentService
             if(change.Revaluation!=0) await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,null,0,change.Revaluation,0,0,null,null,ct);
             return new(net,tax,change.Value,change.Revaluation,originalInvoice);
         }
-        var issue=StockCalculation.Issue(before,qty,precision,originalCost);
+        // Transfers carry their share of local book value and never post a valuation gain.
+        var issueMethod=d.Kind==StockDocumentKind.Transfer?CostMethod.WeightedAverage:item.Item1;
+        var issue=StockCalculation.Issue(before,qty,precision,originalCost,issueMethod);
         var batches=await IssueBatches(actor,d,l,item.Item2,qty,originalBatch,ct);
         decimal usedQty=0,usedCost=0,usedNet=0,usedTax=0;
         if(d.TargetWarehouseId is int target) await Chronology(l.ProductId,target,d.Date,ct);
@@ -156,7 +158,8 @@ public sealed partial class StockDocumentService
                 await AddMovement(document.Id,index,l.ProductId,dest,await TransferBatch(batch,dest,ct),take,costPart,0,0,null,null,ct);
             usedQty+=take; usedCost+=costPart; usedNet+=netPart; usedTax+=taxPart;
         }
-        return new(net,tax,issue.Value,0,originalInvoice);
+        if(issue.Revaluation!=0) await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,null,0,issue.Revaluation,0,0,null,null,ct);
+        return new(net,tax,issue.Value,issue.Revaluation,originalInvoice);
     }
     public Task<StockDocument> PostAsync(int actor,long id,int version,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,async () =>

@@ -168,6 +168,7 @@ public partial class StockWindow : Window
         var id=await Use(s=>s.CreateProductAsync(actor,new(Code.Text,ProductName.Text,Id(BaseUnit),Method.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase,Tracked.IsChecked==true)));
         await LoadLookups();SetupProduct.SelectedValue=id;Status.Text="تم إنشاء الصنف ووحدة الأساس.";
     });
+    private async void ChangeMethod(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ChangeCostMethodAsync(actor,Id(SetupProduct),ExistingMethod.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase));await LoadLookups();Status.Text="حفظت طريقة التكلفة.";});
     private async void CreateUnit(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.AddUnitAsync(actor,Id(SetupProduct),Id(ExtraUnit),Number(Factor)));await LineOptions();Status.Text="حفظ تحويل الوحدة.";});
     private async void CreateBatch(object sender,RoutedEventArgs e)=>await Run(async()=>{await Use(s=>s.CreateBatchAsync(actor,branch,Id(SetupProduct),Id(BatchWarehouse),BatchCode.Text,Day(Expiry)));await LineOptions();Status.Text="تم إنشاء الدفعة.";});
     private async void Configure(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ConfigureAsync(actor,branch,new(Id(StockAccount),Id(SalesAccount),Id(CostAccount),Id(Adjustment),Id(InputTax),Id(OutputTax))));Status.Text="حفظت حسابات الترحيل.";});

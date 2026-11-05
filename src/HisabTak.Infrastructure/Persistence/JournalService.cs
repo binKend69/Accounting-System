@@ -95,7 +95,10 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
         await authorization.DemandAsync(actorId, PermissionCodes.JournalReverse, cancellationToken);
         if (!documentOperation && await sql.ScalarAsync("SELECT (SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE JournalEntryId=@id)+(SELECT COUNT_BIG(*) FROM dbo.StockDocuments WHERE JournalId=@id)", cancellationToken, ("@id", originalId)) > 0)
             throw new InvalidOperationException("Reverse the owning document through its coordinator.");
+        if (await sql.ScalarAsync("SELECT (SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE SourceKey=@k)+(SELECT COUNT_BIG(*) FROM dbo.StockDocuments WHERE SourceKey=@k)", cancellationToken, ("@k",sourceKey))>0)
+            throw new InvalidOperationException("Reversal source already belongs to a document.");
         var original = await ReadAsync(originalId, cancellationToken);
+        if (date<original.EntryDate) throw new InvalidOperationException("Reversal cannot precede the original posting.");
         await AccountingAccess.BranchAsync(db, authorization, actorId, original.BranchId, cancellationToken);
         if (original.Kind == JournalKind.Reversal) throw new InvalidOperationException("A reversal cannot itself be reversed.");
         var originalPeriod = new FiscalPeriod("snapshot", original.EntryDate, original.EntryDate);

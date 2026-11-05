@@ -30,7 +30,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
     {
         ArgumentNullException.ThrowIfNull(draft);
         if (draft.Kind is not (JournalKind.Standard or JournalKind.Opening)) throw new InvalidOperationException("Unsupported document type.");
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await LockAndAuthorizeAsync(actorId, PermissionCodes.JournalPost, cancellationToken);
         await AccountingAccess.BranchAsync(db, authorization, actorId, draft.BranchId, cancellationToken);
         await ValidateVoucherAsync(draft, type, cancellationToken);
@@ -40,7 +40,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
         {
             var (saved, originalPayload) = await ReadAsync(existing, cancellationToken);
             if (payload != originalPayload || saved.TypeCode != type) throw new InvalidOperationException("Source reference was reused with different document content.");
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return saved;
         }
         if (await sql.ScalarAsync("SELECT (SELECT COUNT_BIG(*) FROM dbo.JournalEntries WHERE SourceKey=@source)+(SELECT COUNT_BIG(*) FROM dbo.StockDocuments WHERE SourceKey=@source)", cancellationToken, ("@source", draft.SourceKey)) != 0)
@@ -53,7 +53,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
             ("@source", draft.SourceKey), ("@payload", payload), ("@actor", actorId));
         await AuditAsync(actorId, "DOCUMENT_DRAFT_SAVED", id, cancellationToken);
         var result = (await ReadAsync(id, cancellationToken)).Document;
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return result;
     }
 
@@ -65,7 +65,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
 
     private async Task<JournalDocument> PostCoreAsync(int actorId, long documentId, int? expectedVersion, CancellationToken cancellationToken)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await LockAndAuthorizeAsync(actorId, PermissionCodes.JournalPost, cancellationToken);
         var (document, json) = await ReadAsync(documentId, cancellationToken);
         await AccountingAccess.BranchAsync(db, authorization, actorId, document.BranchId, cancellationToken);
@@ -73,7 +73,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
         {
             var postedFromVersion = document.Version - (document.State == JournalDocumentState.Reversed ? 2 : 1);
             if (expectedVersion is not null && expectedVersion != postedFromVersion) throw new DocumentConflictException();
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return document; // Includes cancelled originals: never post their effects again.
         }
         if (expectedVersion is not null && expectedVersion != document.Version) throw new DocumentConflictException();
@@ -89,7 +89,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
             cancellationToken, ("@number", number), ("@journal", journalId), ("@id", documentId));
         await AuditAsync(actorId, "DOCUMENT_POSTED", documentId, cancellationToken);
         var result = (await ReadAsync(documentId, cancellationToken)).Document;
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return result;
     }
 

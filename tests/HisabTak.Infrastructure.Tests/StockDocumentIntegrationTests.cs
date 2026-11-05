@@ -59,6 +59,11 @@ public sealed partial class LedgerIntegrationTests
         await Trade(test,s,Draft(s,StockDocumentKind.PurchaseReturn,s.Supplier,new StockLine(s.Product,s.Unit,2,OriginalMovementId:purchase.Movements[0].Id)));
         Assert.Equal(800,(await Debts(test,s)).Single(x=>x.DocumentId==purchase.Id).RemainingAmount);
         Assert.Equal(600,Assert.Single(await Stock(test,s,Date)).BookValue);
+        var vouchers=await With<IJournalDocumentService,IReadOnlyList<JournalDocument>>(test,j=>j.ListAsync(s.F.Owner,s.F.Branch));
+        var receipt=Assert.Single(vouchers,x=>x.JournalId==ids[0]);
+        Assert.Equal("RECEIPT_VOUCHER",receipt.TypeCode);
+        await With<IJournalDocumentService,JournalDocument>(test,j=>j.ReverseAsync(s.F.Owner,receipt.Id,Date.AddDays(1),Guid.NewGuid()));
+        Assert.Equal(300,(await Debts(test,s)).Single(x=>x.DocumentId==sale.Id).RemainingAmount);
     }
     [SqlServerFact]
     public async Task Stock_fefo_splits_by_expiry_transfers_value_and_rejects_expired_or_backdated_issue()
@@ -81,6 +86,7 @@ public sealed partial class LedgerIntegrationTests
     {
         await using var test=await SqlTestDatabase.CreateAsync(); var s=await StoreAsync(test,method:CostMethod.LastPurchase);
         await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,10,100)));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>Change<IStockDocumentService>(test,x=>x.ChangeCostMethodAsync(s.F.Owner,s.Product,CostMethod.WeightedAverage)));
         var later=await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,2,120)) with {Date=Date.AddDays(1)});
         Assert.Equal(1440,Assert.Single(await Stock(test,s,Date.AddDays(1))).BookValue);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>With<IJournalService,long>(test,j=>j.ReverseAsync(s.F.Owner,later.JournalId!.Value,Date.AddDays(2),Guid.NewGuid())));

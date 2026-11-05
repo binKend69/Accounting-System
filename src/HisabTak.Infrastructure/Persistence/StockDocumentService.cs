@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HisabTak.Infrastructure.Persistence;
 
-public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthorizationService authorization, JournalService journals) : IStockDocumentService
+public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthorizationService authorization, JournalService journals, IJournalDocumentService vouchers) : IStockDocumentService
 {
     private readonly SqlLedger sql = new(db);
     private async Task<T> Write<T>(int actor, string permission, CancellationToken ct, Func<Task<T>> action)
@@ -59,6 +59,17 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             await sql.ExecuteAsync("INSERT dbo.StockProductUnits VALUES(@id,@unit,1)",ct,("@id",id),("@unit",product.BaseUnitId));
             await Audit(actor,"PRODUCT_CREATED","StockProducts",id,ct);
             return id;
+        });
+    public Task ChangeCostMethodAsync(int actor,int productId,CostMethod method,CancellationToken ct=default) =>
+        Write(actor,PermissionCodes.SetupManage,ct,async () =>
+        {
+            if(!Enum.IsDefined(method)) throw new ArgumentOutOfRangeException(nameof(method));
+            if(await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockProducts WHERE ProductId=@p",ct,("@p",productId))!=1 ||
+                await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockMovements WHERE ProductId=@p",ct,("@p",productId))!=0)
+                throw new InvalidOperationException("Cost method must be set before the first stock movement.");
+            await sql.ExecuteAsync("UPDATE dbo.StockProducts SET CostMethod=@m WHERE ProductId=@p",ct,("@p",productId),("@m",(int)method));
+            await Audit(actor,"PRODUCT_COST_METHOD_SET","StockProducts",productId,ct);
+            return productId;
         });
     public Task AddUnitAsync(int actor, int productId, int unitId, decimal factor, CancellationToken ct = default) =>
         Write(actor, PermissionCodes.SetupManage, ct, async () =>

@@ -87,7 +87,16 @@ internal static class Program
         Click(history,"LogoutButton");
         if (((ItemsControl)history.FindName("UnitList")).Items.Count != 0 || ((ComboBox)history.FindName("WarehouseBox")).Items.Count != 0)
             throw new InvalidOperationException("Logout retained inventory reference data.");
-        history.Close(); app.Shutdown();
+        history.Close();
+        using var stockProvider=new ServiceCollection().AddSingleton<IStockDocumentService,SmokeStock>().BuildServiceProvider();
+        var stock=new StockWindow(stockProvider.GetRequiredService<IServiceScopeFactory>(),1,1,1,[new(11,"الصندوق",1,null)]);
+        stock.LoadAsync().GetAwaiter().GetResult(); stock.Show(); stock.UpdateLayout();
+        ((TextBox)stock.FindName("Quantity")).Text="2"; ((TextBox)stock.FindName("Price")).Text="125.50";
+        Click(stock,"AddStockLineButton"); Click(stock,"SaveButton");
+        var saved=((SmokeStock)stockProvider.GetRequiredService<IStockDocumentService>()).Saved;
+        if(saved?.Lines.Count!=1 || saved.Lines[0].Quantity!=2 || saved.Lines[0].UnitPrice!=125.50m || saved.CounterpartyAccountId!=11)
+            throw new InvalidOperationException("Stock editor did not save the reviewed purchase draft.");
+        Capture(stock,"stock-purchase-draft");stock.Close();app.Shutdown();
         Console.WriteLine("WPF smoke passed: XAML construction, RTL, authenticated workspace gate, two window sizes, safe missing-connection login, authenticated editor save and immutable posted view (stub services).");
     }
     private static void Click(Window window,string name)

@@ -21,7 +21,7 @@ public static class StockCalculation
     public static StockChange Receive(StockPosition before, decimal quantity, decimal value, CostMethod method, int precision, bool purchase)
     {
         Validate(before, quantity, precision);
-        if (value <= 0 || !Enum.IsDefined(method)) throw new ArgumentOutOfRangeException(nameof(value));
+        if (value < 0 || !Enum.IsDefined(method)) throw new ArgumentOutOfRangeException(nameof(value));
         Exact(value, precision);
         var price = purchase ? Round(value / quantity, 8) : before.LastPurchasePrice;
         // Last-purchase valuation changes the remaining stock at receipt time, never past issues.
@@ -30,16 +30,20 @@ public static class StockCalculation
         Exact(after.Quantity, 8); Exact(after.BookValue, precision);
         return new(after, value, revaluation);
     }
-    public static StockChange Issue(StockPosition before, decimal quantity, int precision, decimal? historicalValue = null)
+    public static StockChange Issue(StockPosition before, decimal quantity, int precision, decimal? historicalValue = null, CostMethod method = CostMethod.WeightedAverage)
     {
         Validate(before, quantity, precision);
         if (quantity > before.Quantity) throw new InvalidOperationException("Insufficient stock.");
-        var value = historicalValue ?? (quantity == before.Quantity ? before.BookValue : Round(before.BookValue * quantity / before.Quantity, precision));
-        if (value < 0 || value > before.BookValue) throw new InvalidOperationException("Insufficient inventory value for historical return.");
+        var carryingShare = quantity == before.Quantity ? before.BookValue : Round(before.BookValue * quantity / before.Quantity, precision);
+        var value = historicalValue ?? (method == CostMethod.LastPurchase && before.LastPurchasePrice > 0
+            ? Round(before.LastPurchasePrice * quantity, precision) : carryingShare);
+        if (value < 0) throw new InvalidOperationException("Invalid historical issue value.");
         Exact(value, precision);
-        if (quantity == before.Quantity && value != before.BookValue)
-            throw new InvalidOperationException("A full historical issue requires a valuation adjustment before posting.");
-        return new(new(before.Quantity - quantity, before.BookValue - value, before.LastPurchasePrice), value, 0m);
+        // A historical return can exhaust units at a different price than the remaining book value.
+        // Expose the difference as its own valuation entry instead of leaving value behind at zero quantity.
+        var carryingIssue = quantity == before.Quantity || value > before.BookValue ? carryingShare : value;
+        var adjustment = value - carryingIssue;
+        return new(new(before.Quantity - quantity, before.BookValue - carryingIssue, before.LastPurchasePrice), value, adjustment);
     }
     public static decimal Allocate(decimal originalValue, decimal originalQuantity, decimal returnedQuantity, decimal alreadyQuantity, decimal alreadyValue, int precision)
     {

@@ -31,8 +31,16 @@ public sealed partial class StockDocumentService
             if(d.Kind==StockDocumentKind.Sale)
             {
                 var limit=await db.Accounts.Where(x=>x.Id==d.CounterpartyAccountId).Select(x=>x.CreditLimit).SingleAsync(ct);
-                if(limit is decimal max && (await ReadDebts(d.BranchId,ct)).Where(x=>x.AccountId==d.CounterpartyAccountId && x.Receivable).Sum(x=>x.RemainingAmount)+total>max)
-                    throw new InvalidOperationException("Credit limit exceeded.");
+                if(limit is decimal max)
+                {
+                    // The current invoice has already posted within this transaction. Include existing journal and opening balances.
+                    var exposure=(await Rows("""
+                        SELECT COALESCE(SUM(CASE WHEN l.Side=1 THEN l.Amount ELSE -l.Amount END),0) FROM dbo.JournalLines l
+                        JOIN dbo.JournalEntries h ON h.JournalEntryId=l.JournalEntryId WHERE h.PostedAt IS NOT NULL
+                        AND l.AccountId=@a AND h.BranchId=@b AND l.CurrencyId=@c
+                        """,r=>r.GetDecimal(0),ct,("@a",d.CounterpartyAccountId),("@b",d.BranchId),("@c",d.CurrencyId))).Single();
+                    if(exposure>max) throw new InvalidOperationException("Credit limit exceeded.");
+                }
             }
             await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@v)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.Sale),("@v",total));
             return;
@@ -69,9 +77,12 @@ public sealed partial class StockDocumentService
             var book=SettlementAllocation.Allocate(new(debt.OriginalAmount,debt.CurrencyId),new(debt.OriginalBookValue,debt.CurrencyId),
                 new(debt.RemainingAmount,debt.CurrencyId),new(payment.Amount,debt.CurrencyId),new(debt.RemainingBookValue,debt.CurrencyId),precision);
             var v=new BaseCurrencyValuation(new(payment.Amount,debt.CurrencyId),debt.CurrencyId,1,payment.Date);
-            var journal=await journals.PostDocumentAsync(actor,JournalDraft.Create(d.BranchId,new FiscalPeriod("Settlement",payment.Date,payment.Date),
+            var proposal=JournalDraft.Create(d.BranchId,new FiscalPeriod("Settlement",payment.Date,payment.Date),
                 payment.Date,payment.SourceKey,[new(payment.CashAccountId,debt.Receivable?JournalSide.Debit:JournalSide.Credit,v),
-                new(debt.AccountId,debt.Receivable?JournalSide.Credit:JournalSide.Debit,v)]),ct);
+                new(debt.AccountId,debt.Receivable?JournalSide.Credit:JournalSide.Debit,v)]);
+            var voucher=await vouchers.SaveVoucherAsync(actor,proposal,debt.Receivable?"RECEIPT_VOUCHER":"PAYMENT_VOUCHER",ct);
+            var posted=await vouchers.PostVersionAsync(actor,voucher.Id,voucher.Version,ct);
+            var journal=posted.JournalId!.Value;
             await sql.ExecuteAsync("INSERT dbo.StockDebtAllocations(InvoiceId,SourceKey,JournalId,Amount,BookValue,Payload) VALUES(@i,@k,@j,@v,@b,@p)",
                 ct,("@i",invoice.Id),("@k",payment.SourceKey),("@j",journal),("@v",payment.Amount),("@b",book.Amount),("@p",payload));
             await Audit(actor,"INVOICE_SETTLED","StockDocuments",invoice.Id,ct); return journal;

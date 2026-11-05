@@ -29,6 +29,7 @@ public interface IStockDocumentService
 {
     Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
+    Task ChangeCostMethodAsync(int actor, int productId, CostMethod method, CancellationToken ct = default);
     Task AddUnitAsync(int actor, int productId, int unitId, decimal factor, CancellationToken ct = default);
     Task<long> CreateBatchAsync(int actor, int branchId, int productId, int warehouseId, string code, DateOnly expiry, CancellationToken ct = default);
     Task ConfigureAsync(int actor, int branchId, InventoryAccounts accounts, CancellationToken ct = default);
