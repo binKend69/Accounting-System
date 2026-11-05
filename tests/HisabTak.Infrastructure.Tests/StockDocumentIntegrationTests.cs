@@ -55,6 +55,44 @@ public sealed partial class LedgerIntegrationTests
         Assert.Equal(2,all.Where(x=>ids.Contains(x.Id)).Select(x=>x.Code).Distinct().Count());
     }
     [SqlServerFact]
+    public async Task Service_sale_and_original_linked_return_change_cash_but_never_stock()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);
+        var item=await With<IStockDocumentService,int>(test,x=>x.CreateProductAsync(s.F.Owner,new("S-1","Delivery",s.Unit,CostMethod.WeightedAverage,false,false)));
+        var sale=await Trade(test,s,Draft(s,StockDocumentKind.Sale,s.Cash,new StockLine(item,s.Unit,2,50)));
+        var original=Assert.Single(sale.Movements);Assert.Equal(2,original.BilledQuantity);Assert.Equal(0,original.Quantity);
+        await Trade(test,s,Draft(s,StockDocumentKind.SalesReturn,s.Cash,new StockLine(item,s.Unit,1,OriginalMovementId:original.Id)));
+        Assert.Empty(await Stock(test,s,Date));
+        var cash=Assert.Single(await With<IJournalService,IReadOnlyList<LedgerBalance>>(test,x=>x.BalancesAsync(s.F.Owner,s.F.Branch,s.F.Currency,Date)),x=>x.AccountId==s.Cash);
+        Assert.Equal(50,cash.Debit-cash.Credit);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>Trade(test,s,Draft(s,StockDocumentKind.SalesReturn,s.Cash,new StockLine(item,s.Unit,2,OriginalMovementId:original.Id))));
+    }
+    [SqlServerFact]
+    public async Task Manual_batch_selection_requires_an_explicit_grant_and_reason()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test,true);
+        var batch=await With<IStockDocumentService,long>(test,x=>x.CreateBatchAsync(s.F.Owner,s.F.Branch,s.Product,s.Warehouse,"batch",Date.AddDays(1)));
+        await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,2,10,BatchId:batch)));
+        var line=new StockLine(s.Product,s.Unit,1,20,BatchId:batch);
+        await Assert.ThrowsAnyAsync<ArgumentException>(()=>Trade(test,s,Draft(s,StockDocumentKind.Sale,s.Cash,line)));
+        var draft=Draft(s,StockDocumentKind.Sale,s.Cash,line with {BatchOverrideReason="Customer batch request"});
+        int clerk;
+        await using(var db=test.Context())
+        {
+            var user=new Domain.Security.User("stock-clerk",new HisabTak.Infrastructure.Security.BCryptPasswordHasher().Hash("Test-"+Guid.NewGuid().ToString("N")));
+            db.Users.Add(user);await db.SaveChangesAsync();clerk=user.Id;
+            var grants=await db.Permissions.Where(x=>x.Code==Domain.Security.PermissionCodes.AccountingAllBranches || x.Code==Domain.Security.PermissionCodes.JournalPost).ToListAsync();
+            foreach(var grant in grants)db.UserPermissions.Add(new Domain.Security.UserPermission(clerk,grant.Id));
+            await db.SaveChangesAsync();
+        }
+        var saved=await With<IStockDocumentService,StockDocument>(test,x=>x.SaveAsync(clerk,draft));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(()=>With<IStockDocumentService,StockDocument>(test,x=>x.PostAsync(clerk,saved.Id,saved.Version)));
+        var posted=await With<IStockDocumentService,StockDocument>(test,x=>x.PostAsync(s.F.Owner,saved.Id,saved.Version));
+        Assert.Equal("Customer batch request",posted.Draft.Lines[0].BatchOverrideReason);
+        Assert.Equal(batch,Assert.Single(posted.Movements).BatchId);
+    }
+
+    [SqlServerFact]
     public async Task Concurrent_sales_cannot_spend_the_same_stock_and_exceeded_limit_leaves_no_effect()
     {
         await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);

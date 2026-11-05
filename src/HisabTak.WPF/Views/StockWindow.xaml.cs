@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -61,6 +60,10 @@ public partial class StockWindow : Window
         catch(UnauthorizedAccessException){Status.Text="لا تملك صلاحية هذه العملية في الفرع.";}
         catch(DocumentConflictException){Status.Text="تغيرت النسخة المحفوظة. افتح المستند مجددًا من السجل.";}
         catch(Exception e) when(e is ArgumentException or FormatException or OverflowException){Status.Text="راجع الاختيارات والأرقام والتاريخ. استخدم النقطة للفاصل العشري.";}
+        catch(InvalidOperationException e) when(e.Message.Contains("valuation policy",StringComparison.Ordinal)){Status.Text="اختر معالجة فرق آخر شراء في إعداد حسابات الفرع."; }
+        catch(InvalidOperationException e) when(e.Message.StartsWith("Insufficient",StringComparison.Ordinal)){Status.Text="الكمية المتاحة للصرف لا تكفي. راجع رصيد المستودع وصلاحية الدفعات."; }
+        catch(InvalidOperationException e) when(e.Message.Contains("credit limit",StringComparison.OrdinalIgnoreCase)){Status.Text="راجع الحد الائتماني للعميل وقيمة رصيده قبل البيع الآجل."; }
+        catch(InvalidOperationException e) when(e.Message.StartsWith("Backdated",StringComparison.Ordinal)){Status.Text="تاريخ المستند أقدم من آخر حركة للصنف في المستودع."; }
         catch(Exception){Status.Text="تعذرت العملية. راجع الرصيد والصلاحية والفترة والحسابات والاتصال ثم افتح النسخة المحفوظة للتحقق.";}
         finally{busy=false;Tabs.IsEnabled=true;Buttons();}
     }
@@ -123,7 +126,7 @@ public partial class StockWindow : Window
     {
         if(current==null)return rows.Count!=0;
         if(current.State!=1)return false;
-        try{return JsonSerializer.Serialize(Build())!=JsonSerializer.Serialize(current.Draft);}
+        try{var d=Build();return (d with {Lines=current.Draft.Lines})!=current.Draft || !d.Lines.SequenceEqual(current.Draft.Lines);}
         catch(Exception){return true;}
     }
     private bool Discard()=>!Dirty() || MessageBox.Show(this,"ترك تعديلات المستند غير المحفوظة؟","تأكيد",MessageBoxButton.YesNo)==MessageBoxResult.Yes;
@@ -209,7 +212,7 @@ public partial class StockWindow : Window
     private async void SetBarcode(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetBarcodeAsync(actor,Id(SetupProduct),Id(PriceUnit),SetupBarcode.Text));Status.Text="تم ربط الباركود.";});
     private async void SetPrice(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetPriceAsync(actor,Id(SetupProduct),Id(PriceUnit),Id(PriceCurrency),SetupTier.Text,Number(SetupPrice)));Status.Text="تم حفظ السعر.";});
     private async void CreateProduct(object sender,RoutedEventArgs e)=>await Run(async()=>{
-        var id=await Use(s=>s.CreateProductAsync(actor,new(Code.Text,ProductName.Text,Id(BaseUnit),Method.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase,Tracked.IsChecked==true)));
+        var id=await Use(s=>s.CreateProductAsync(actor,new(Code.Text,ProductName.Text,Id(BaseUnit),Method.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase,Tracked.IsChecked==true,ServiceItem.IsChecked!=true)));
         await LoadLookups();SetupProduct.SelectedValue=id;Status.Text="تم إنشاء الصنف ووحدة الأساس.";
     });
     private async void ChangeMethod(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ChangeCostMethodAsync(actor,Id(SetupProduct),ExistingMethod.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase));await LoadLookups();Status.Text="حفظت طريقة التكلفة.";});

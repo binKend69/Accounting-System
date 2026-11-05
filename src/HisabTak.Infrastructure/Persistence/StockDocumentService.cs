@@ -63,6 +63,11 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
                 SELECT CAST(SCOPE_IDENTITY() AS int);
                 """, ct, ("@code",Name(code,40)),("@name",Name(product.Name,200)),("@unit",product.BaseUnitId),("@method",(int)product.CostMethod),("@track",product.TrackBatches)));
             await sql.ExecuteAsync("INSERT dbo.StockProductUnits VALUES(@id,@unit,1)",ct,("@id",id),("@unit",product.BaseUnitId));
+            if(!product.DecreaseQtyOnSale)
+            {
+                if(product.TrackBatches)throw new ArgumentException("Services cannot track batches.");
+                await sql.ExecuteAsync("INSERT dbo.StockServiceItems VALUES(@i)",ct,("@i",id));
+            }
             await Audit(actor,"PRODUCT_CREATED","StockProducts",id,ct);
             return id;
         });
@@ -168,7 +173,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
     public async Task<IReadOnlyList<ProductInfo>> ProductsAsync(int actor,CancellationToken ct=default)
     {
         await authorization.DemandAsync(actor,PermissionCodes.JournalRead,ct);
-        return await Rows("SELECT ProductId,Code,Name,BaseUnitId,CostMethod,TrackBatches FROM dbo.StockProducts ORDER BY Code",r=>new ProductInfo(r.GetInt32(0),r.GetString(1),r.GetString(2),r.GetInt32(3),(CostMethod)r.GetInt32(4),r.GetBoolean(5)),ct);
+        return await Rows("SELECT p.ProductId,p.Code,p.Name,p.BaseUnitId,p.CostMethod,p.TrackBatches,CAST(CASE WHEN s.ProductId IS NULL THEN 1 ELSE 0 END AS bit) FROM dbo.StockProducts p LEFT JOIN dbo.StockServiceItems s ON s.ProductId=p.ProductId ORDER BY p.Code",r=>new ProductInfo(r.GetInt32(0),r.GetString(1),r.GetString(2),r.GetInt32(3),(CostMethod)r.GetInt32(4),r.GetBoolean(5),r.GetBoolean(6)),ct);
     }
     public async Task<IReadOnlyList<ProductUnitInfo>> UnitsAsync(int actor,int productId,CancellationToken ct=default)
     {
@@ -183,8 +188,8 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         return await Rows("SELECT BatchId,ProductId,WarehouseId,Code,Expiry FROM dbo.StockBatches WHERE WarehouseId=@w ORDER BY Expiry,BatchId",r=>new BatchInfo(r.GetInt64(0),r.GetInt32(1),r.GetInt32(2),r.GetString(3),DateOnly.FromDateTime(r.GetDateTime(4))),ct,("@w",warehouseId));
     }
     private static StockMovement Movement(SqlDataReader r) => new(r.GetInt64(0),r.GetInt64(1),r.GetInt32(2),r.GetInt32(3),r.GetInt32(4),
-        r.IsDBNull(5)?null:r.GetInt64(5),r.GetDecimal(6),r.GetDecimal(7),r.GetDecimal(8),r.GetDecimal(9),r.IsDBNull(10)?null:r.GetInt64(10));
-    private const string MovementColumns="m.MovementId,m.DocumentId,m.LineNumber,m.ProductId,m.WarehouseId,m.BatchId,m.Quantity,m.Value,m.Net,m.Tax,m.OriginalMovementId";
+        r.IsDBNull(5)?null:r.GetInt64(5),r.GetDecimal(6),r.GetDecimal(7),r.GetDecimal(8),r.GetDecimal(9),r.IsDBNull(10)?null:r.GetInt64(10),r.IsDBNull(11)?null:r.GetDecimal(11));
+    private const string MovementColumns="m.MovementId,m.DocumentId,m.LineNumber,m.ProductId,m.WarehouseId,m.BatchId,m.Quantity,m.Value,m.Net,m.Tax,m.OriginalMovementId,m.BilledQuantity";
     private async Task<StockDocument> Read(long id,CancellationToken ct)
     {
         var header=(await Rows("SELECT Payload,Version,State,Number,JournalId,ReversalId FROM dbo.StockDocuments WHERE DocumentId=@i",
@@ -222,7 +227,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         {
             var id=await sql.ScalarAsync("""
                 SELECT h.DocumentId FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId
-                WHERE m.MovementId=@m AND m.Quantity<>0 AND h.State=2 AND h.BranchId=@b AND h.Kind=@kind AND h.EntryDate<=@date
+                WHERE m.MovementId=@m AND (m.Quantity<>0 OR m.BilledQuantity IS NOT NULL) AND h.State=2 AND h.BranchId=@b AND h.Kind=@kind AND h.EntryDate<=@date
                 """,ct,("@m",movement),("@b",draft.BranchId),("@kind",(int)expected),("@date",draft.Date));
             if(id==0)throw new InvalidOperationException("Return needs an original posted movement in this branch.");
             var invoice=(await Read(id,ct)).Draft;

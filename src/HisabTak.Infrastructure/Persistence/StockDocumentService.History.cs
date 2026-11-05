@@ -130,7 +130,11 @@ public sealed partial class StockDocumentService
                 SELECT COUNT(*) FROM dbo.StockDebtAllocations a WHERE a.InvoiceId=@i AND NOT EXISTS(
                     SELECT 1 FROM dbo.JournalEntries r WHERE r.ReversesEntryId=a.JournalId AND r.PostedAt IS NOT NULL)
                 """,ct,("@i",id))!=0) throw new InvalidOperationException("Reverse settlements and returns before invoice reversal.");
-            foreach(var position in doc.Movements.GroupBy(m=>(m.ProductId,m.WarehouseId)))
+            if(await sql.ScalarAsync("""
+                SELECT COUNT(*) FROM dbo.StockMovements r JOIN dbo.StockMovements o ON r.OriginalMovementId=o.MovementId
+                JOIN dbo.StockDocuments h ON h.DocumentId=r.DocumentId WHERE o.DocumentId=@i AND h.State=2
+                """,ct,("@i",id))!=0)throw new InvalidOperationException("Reverse original-linked returns first.");
+            foreach(var position in doc.Movements.Where(m=>m.BilledQuantity==null).GroupBy(m=>(m.ProductId,m.WarehouseId)))
             {
                 await Chronology(position.Key.ProductId,position.Key.WarehouseId,date,ct);
                 if(await sql.ScalarAsync("""
@@ -148,7 +152,7 @@ public sealed partial class StockDocumentService
         await authorization.DemandAsync(actor,PermissionCodes.JournalRead,ct); await Branch(actor,branchId,ct);
         return await Rows("""
             WITH active AS (SELECT m.* FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId
-                WHERE h.BranchId=@b AND h.State>=2 AND h.EntryDate<=@d AND (h.ReversalDate IS NULL OR h.ReversalDate>@d))
+                WHERE m.BilledQuantity IS NULL AND h.BranchId=@b AND h.State>=2 AND h.EntryDate<=@d AND (h.ReversalDate IS NULL OR h.ReversalDate>@d))
             SELECT m.ProductId,m.WarehouseId,SUM(m.Quantity),SUM(m.Value),COALESCE((SELECT TOP(1) s.LastPurchasePrice FROM active s WHERE
                 s.ProductId=m.ProductId AND s.WarehouseId=m.WarehouseId AND s.LastPurchasePrice IS NOT NULL ORDER BY s.MovementId DESC),CAST(0 AS decimal(28,8)))
             FROM active m GROUP BY m.ProductId,m.WarehouseId ORDER BY m.ProductId,m.WarehouseId

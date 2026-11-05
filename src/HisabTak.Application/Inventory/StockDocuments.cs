@@ -3,8 +3,8 @@ using HisabTak.Domain.Inventory;
 namespace HisabTak.Application.Inventory;
 
 public enum StockDocumentKind { Opening = 1, Purchase = 2, Sale = 3, PurchaseReturn = 4, SalesReturn = 5, Transfer = 6, Increase = 7, Decrease = 8 }
-public sealed record ProductDefinition(string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches);
-public sealed record ProductInfo(int Id, string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches);
+public sealed record ProductDefinition(string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true);
+public sealed record ProductInfo(int Id, string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true);
 public sealed record ProductUnitInfo(int ProductId, int UnitId, decimal Factor);
 public sealed record BatchInfo(long Id, int ProductId, int WarehouseId, string Code, DateOnly Expiry);
 public sealed record StockLine(int ProductId, int UnitId, decimal Quantity, decimal UnitPrice = 0m,
@@ -15,7 +15,7 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
     int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.Unspecified);
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
-    long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId);
+    long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId, decimal? BilledQuantity = null);
 public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Version, int State, long? Number,
     long? JournalId, long? ReversalId, IReadOnlyList<StockMovement> Movements);
 public sealed record StockBalance(int ProductId, int WarehouseId, decimal Quantity, decimal BookValue, decimal LastPurchasePrice);

@@ -46,13 +46,13 @@ public sealed partial class StockDocumentService
             FROM dbo.StockMovements m JOIN dbo.StockDocuments d ON d.DocumentId=m.DocumentId WHERE d.State<>3 AND m.ProductId=@p AND m.WarehouseId=@w
             """,r=>new StockPosition(r.GetDecimal(0),r.GetDecimal(1),r.GetDecimal(2)),ct,("@p",product),("@w",warehouse))).Single();
     }
-    private async Task AddMovement(long id,int line,int product,int warehouse,long? batch,decimal qty,decimal value,decimal net,decimal tax,long? original,decimal? last,CancellationToken ct)
+    private async Task AddMovement(long id,int line,int product,int warehouse,long? batch,decimal qty,decimal value,decimal net,decimal tax,long? original,decimal? last,CancellationToken ct,decimal? billed=null)
     {
         StockCalculation.Exact(value,8);
         await sql.ExecuteAsync("""
-            INSERT dbo.StockMovements(DocumentId,LineNumber,ProductId,WarehouseId,BatchId,Quantity,Value,Net,Tax,OriginalMovementId,LastPurchasePrice)
-            VALUES(@i,@l,@p,@w,@b,@q,@v,@n,@t,@o,@last)
-            """,ct,("@i",id),("@l",line),("@p",product),("@w",warehouse),("@b",batch),("@q",qty),("@v",value),("@n",net),("@t",tax),("@o",original),("@last",last));
+            INSERT dbo.StockMovements(DocumentId,LineNumber,ProductId,WarehouseId,BatchId,Quantity,Value,Net,Tax,OriginalMovementId,LastPurchasePrice,BilledQuantity)
+            VALUES(@i,@l,@p,@w,@b,@q,@v,@n,@t,@o,@last,@billed)
+            """,ct,("@i",id),("@l",line),("@p",product),("@w",warehouse),("@b",batch),("@q",qty),("@v",value),("@n",net),("@t",tax),("@o",original),("@last",last),("@billed",billed));
     }
     private async Task<List<(long? Batch,decimal Quantity)>> IssueBatches(int actor,StockDocumentDraft d,StockLine l,bool tracked,decimal quantity,long? historical,CancellationToken ct)
     {
@@ -101,13 +101,13 @@ public sealed partial class StockDocumentService
         var required=d.Kind==StockDocumentKind.SalesReturn?StockDocumentKind.Sale:StockDocumentKind.Purchase;
         if(owner.State!=2 || owner.Draft.Kind!=required || owner.Draft.BranchId!=d.BranchId || owner.Draft.Credit!=d.Credit ||
             owner.Draft.CounterpartyAccountId!=d.CounterpartyAccountId || owner.Draft.CurrencyId!=d.CurrencyId || owner.Draft.RateToBase!=d.RateToBase ||
-            orig.ProductId!=l.ProductId || orig.WarehouseId!=d.WarehouseId || orig.Quantity==0 || l.BatchId!=null && l.BatchId!=orig.BatchId)
+            orig.ProductId!=l.ProductId || orig.WarehouseId!=d.WarehouseId || (orig.Quantity==0 && orig.BilledQuantity==null) || l.BatchId!=null && l.BatchId!=orig.BatchId)
             throw new InvalidOperationException("Return must reference the original invoice movement and party.");
         var used=(await Rows("""
-            SELECT COALESCE(SUM(ABS(m.Quantity)),0),COALESCE(SUM(ABS(m.Value)),0),COALESCE(SUM(m.Net),0),COALESCE(SUM(m.Tax),0)
+            SELECT COALESCE(SUM(COALESCE(m.BilledQuantity,ABS(m.Quantity))),0),COALESCE(SUM(ABS(m.Value)),0),COALESCE(SUM(m.Net),0),COALESCE(SUM(m.Tax),0)
             FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId WHERE h.State<>3 AND OriginalMovementId=@i
             """,r=>(r.GetDecimal(0),r.GetDecimal(1),r.GetDecimal(2),r.GetDecimal(3)),ct,("@i",orig.Id))).Single();
-        decimal Part(decimal total,decimal usedValue,int scale)=>StockCalculation.Allocate(total,Math.Abs(orig.Quantity),qty,used.Item1,usedValue,scale);
+        decimal Part(decimal total,decimal usedValue,int scale)=>StockCalculation.Allocate(total,orig.BilledQuantity??Math.Abs(orig.Quantity),qty,used.Item1,usedValue,scale);
         return (orig,owner,Part(Math.Abs(orig.Value),used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
     }
     private sealed record LineEffect(decimal Net,decimal Tax,decimal Cost,decimal Revaluation,long? Invoice);
@@ -116,11 +116,9 @@ public sealed partial class StockDocumentService
         var d=document.Draft; var l=d.Lines[index];
         if(!await db.Units.AnyAsync(x=>x.Id==l.UnitId && x.IsActive,ct)) throw new InvalidOperationException("Unit unavailable.");
         var item=(await Rows("""
-            SELECT p.CostMethod,p.TrackBatches,u.Factor FROM dbo.StockProducts p JOIN dbo.StockProductUnits u ON p.ProductId=u.ProductId WHERE p.ProductId=@p AND u.UnitId=@u
-            """,r=>((CostMethod)r.GetInt32(0),r.GetBoolean(1),r.GetDecimal(2)),ct,("@p",l.ProductId),("@u",l.UnitId))).Single();
+            SELECT p.CostMethod,p.TrackBatches,u.Factor,CAST(CASE WHEN s.ProductId IS NULL THEN 0 ELSE 1 END AS bit) FROM dbo.StockProducts p JOIN dbo.StockProductUnits u ON p.ProductId=u.ProductId LEFT JOIN dbo.StockServiceItems s ON s.ProductId=p.ProductId WHERE p.ProductId=@p AND u.UnitId=@u
+            """,r=>((CostMethod)r.GetInt32(0),r.GetBoolean(1),r.GetDecimal(2),r.GetBoolean(3)),ct,("@p",l.ProductId),("@u",l.UnitId))).Single();
         var qty=StockCalculation.Quantity(l.Quantity,item.Item3);
-        await Chronology(l.ProductId,d.WarehouseId,d.Date,ct);
-        var before=await Position(l.ProductId,d.WarehouseId,ct);
         var calc=InvoiceCalculation.Calculate(d.CurrencyId,currencyPrecision,[new(l.Quantity,l.UnitPrice,l.Discount)],d.TaxEnabled,d.TaxRate,d.PricesIncludeTax);
         decimal net=calc.Net,tax=calc.Tax;
         decimal? originalCost=null; long? originalInvoice=null; long? originalBatch=null;
@@ -129,6 +127,15 @@ public sealed partial class StockDocumentService
             var ret=await ReturnAmounts(d,l,qty,precision,currencyPrecision,ct);
             originalCost=ret.Cost; originalInvoice=ret.Owner.Id; originalBatch=ret.Original.BatchId; net=ret.Net; tax=ret.Tax;
         }
+        if(item.Item4)
+        {
+            if(d.Kind is not (StockDocumentKind.Sale or StockDocumentKind.SalesReturn) || l.BatchId!=null || l.BatchOverrideReason!=null)
+                throw new InvalidOperationException("Services use sales and sales returns without stock movements.");
+            await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,null,0,0,net,tax,l.OriginalMovementId,null,ct,qty);
+            return new(net,tax,0,0,originalInvoice);
+        }
+        await Chronology(l.ProductId,d.WarehouseId,d.Date,ct);
+        var before=await Position(l.ProductId,d.WarehouseId,ct);
         bool increase=d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Opening or StockDocumentKind.Increase or StockDocumentKind.SalesReturn;
         if(increase)
         {
