@@ -4,7 +4,7 @@ public sealed record RoundedLedgerLine(JournalLineDefinition Source, decimal Boo
 
 public static class LedgerRounding
 {
-    public static IReadOnlyList<RoundedLedgerLine> Calculate(JournalDraft draft, int precision, int roundingAccountId)
+    public static IReadOnlyList<RoundedLedgerLine> Calculate(JournalDraft draft, int precision, int roundingAccountId, (int AccountId, decimal Principal, decimal BookValue)? settlement = null)
     {
         ArgumentNullException.ThrowIfNull(draft);
         if (precision is < 0 or > 8) throw new ArgumentOutOfRangeException(nameof(precision));
@@ -13,6 +13,14 @@ public static class LedgerRounding
             throw new InvalidOperationException("The rounding account is reserved for generated differences.");
         var lines = draft.Lines.Select(l => new RoundedLedgerLine(l,
             decimal.Round(l.Valuation.ExactBaseAmount.Amount, precision, MidpointRounding.AwayFromZero), false)).ToList();
+        if (settlement is { } allocation)
+        {
+            var matching=lines.Select((l,index)=>(l,index)).Where(x=>x.l.Source.AccountId==allocation.AccountId).ToArray();
+            if (matching.Length!=1 || matching[0].l.Source.Valuation.Original.Amount!=allocation.Principal || allocation.BookValue<0 ||
+                decimal.Round(allocation.BookValue,precision)!=allocation.BookValue)
+                throw new InvalidOperationException("Invalid historical allocation for this journal.");
+            lines[matching[0].index]=matching[0].l with {BookBaseAmount=allocation.BookValue};
+        }
         var difference = lines.Sum(l => l.Source.Side == JournalSide.Debit ? l.BookBaseAmount : -l.BookBaseAmount);
         if (difference != 0)
         {

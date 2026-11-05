@@ -13,7 +13,7 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
     int WarehouseId, int? TargetWarehouseId, int CurrencyId, decimal RateToBase, int CounterpartyAccountId,
     bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false);
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
-    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId);
+    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null);
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
     long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId);
 public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Version, int State, long? Number,
@@ -21,7 +21,7 @@ public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Versio
 public sealed record StockBalance(int ProductId, int WarehouseId, decimal Quantity, decimal BookValue, decimal LastPurchasePrice);
 public sealed record DebtBalance(long DocumentId, int AccountId, int CurrencyId, bool Receivable,
     decimal OriginalAmount, decimal RemainingAmount, decimal OriginalBookValue, decimal RemainingBookValue);
-public sealed record DebtPayment(Guid SourceKey, long InvoiceId, DateOnly Date, decimal Amount, int CashAccountId);
+public sealed record DebtPayment(Guid SourceKey, long InvoiceId, DateOnly Date, decimal Amount, int CashAccountId, decimal? CashAmount = null, decimal? CashRateToBase = null);
 
 public sealed record StockLookups(IReadOnlyList<InventoryReference> Warehouses, IReadOnlyList<InventoryReference> Units, InventoryAccounts? Accounts);
 
@@ -29,6 +29,7 @@ public interface IStockDocumentService
 {
     Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
+    Task SetCurrencyPrecisionAsync(int actor, int currencyId, int precision, CancellationToken ct = default);
     Task ChangeCostMethodAsync(int actor, int productId, CostMethod method, CancellationToken ct = default);
     Task AddUnitAsync(int actor, int productId, int unitId, decimal factor, CancellationToken ct = default);
     Task<long> CreateBatchAsync(int actor, int branchId, int productId, int warehouseId, string code, DateOnly expiry, CancellationToken ct = default);

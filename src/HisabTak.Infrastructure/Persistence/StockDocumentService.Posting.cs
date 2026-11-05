@@ -94,7 +94,7 @@ public sealed partial class StockDocumentService
             SELECT b.BatchId FROM dbo.StockBatches a JOIN dbo.StockBatches b ON a.ProductId=b.ProductId AND a.Code=b.Code WHERE a.BatchId=@s AND b.WarehouseId=@w
             """,ct,("@s",source),("@w",target));
     }
-    private async Task<(StockMovement Original,StockDocument Owner,decimal Cost,decimal Net,decimal Tax)> ReturnAmounts(StockDocumentDraft d,StockLine l,decimal qty,int precision,CancellationToken ct)
+    private async Task<(StockMovement Original,StockDocument Owner,decimal Cost,decimal Net,decimal Tax)> ReturnAmounts(StockDocumentDraft d,StockLine l,decimal qty,int precision,int currencyPrecision,CancellationToken ct)
     {
         var orig=(await Rows("SELECT "+MovementColumns+" FROM dbo.StockMovements m WHERE m.MovementId=@i",Movement,ct,("@i",l.OriginalMovementId))).Single();
         var owner=await Read(orig.DocumentId,ct);
@@ -107,11 +107,11 @@ public sealed partial class StockDocumentService
             SELECT COALESCE(SUM(ABS(m.Quantity)),0),COALESCE(SUM(ABS(m.Value)),0),COALESCE(SUM(m.Net),0),COALESCE(SUM(m.Tax),0)
             FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId WHERE h.State<>3 AND OriginalMovementId=@i
             """,r=>(r.GetDecimal(0),r.GetDecimal(1),r.GetDecimal(2),r.GetDecimal(3)),ct,("@i",orig.Id))).Single();
-        decimal Part(decimal total,decimal usedValue)=>StockCalculation.Allocate(total,Math.Abs(orig.Quantity),qty,used.Item1,usedValue,precision);
-        return (orig,owner,Part(Math.Abs(orig.Value),used.Item2),Part(orig.Net,used.Item3),Part(orig.Tax,used.Item4));
+        decimal Part(decimal total,decimal usedValue,int scale)=>StockCalculation.Allocate(total,Math.Abs(orig.Quantity),qty,used.Item1,usedValue,scale);
+        return (orig,owner,Part(Math.Abs(orig.Value),used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
     }
     private sealed record LineEffect(decimal Net,decimal Tax,decimal Cost,decimal Revaluation,long? Invoice);
-    private async Task<LineEffect> ApplyLine(int actor,StockDocument document,int index,int precision,CancellationToken ct)
+    private async Task<LineEffect> ApplyLine(int actor,StockDocument document,int index,int precision,int currencyPrecision,CancellationToken ct)
     {
         var d=document.Draft; var l=d.Lines[index];
         if(!await db.Units.AnyAsync(x=>x.Id==l.UnitId && x.IsActive,ct)) throw new InvalidOperationException("Unit unavailable.");
@@ -121,12 +121,12 @@ public sealed partial class StockDocumentService
         var qty=StockCalculation.Quantity(l.Quantity,item.Item3);
         await Chronology(l.ProductId,d.WarehouseId,d.Date,ct);
         var before=await Position(l.ProductId,d.WarehouseId,ct);
-        var calc=InvoiceCalculation.Calculate(d.CurrencyId,precision,[new(l.Quantity,l.UnitPrice,l.Discount)],d.TaxEnabled,d.TaxRate,d.PricesIncludeTax);
+        var calc=InvoiceCalculation.Calculate(d.CurrencyId,currencyPrecision,[new(l.Quantity,l.UnitPrice,l.Discount)],d.TaxEnabled,d.TaxRate,d.PricesIncludeTax);
         decimal net=calc.Net,tax=calc.Tax;
         decimal? originalCost=null; long? originalInvoice=null; long? originalBatch=null;
         if(IsReturn(d.Kind))
         {
-            var ret=await ReturnAmounts(d,l,qty,precision,ct);
+            var ret=await ReturnAmounts(d,l,qty,precision,currencyPrecision,ct);
             originalCost=ret.Cost; originalInvoice=ret.Owner.Id; originalBatch=ret.Original.BatchId; net=ret.Net; tax=ret.Tax;
         }
         bool increase=d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Opening or StockDocumentKind.Increase or StockDocumentKind.SalesReturn;
@@ -138,7 +138,7 @@ public sealed partial class StockDocumentService
             if(item.Item2!=(batch!=null) || batch!=null && await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockBatches WHERE BatchId=@b AND ProductId=@p AND WarehouseId=@w",ct,("@b",batch),("@p",l.ProductId),("@w",d.WarehouseId))!=1)
                 throw new InvalidOperationException("Invalid incoming batch.");
             var purchase=d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Opening;
-            var change=StockCalculation.Receive(before,qty,originalCost??net,item.Item1,precision,purchase);
+            var change=StockCalculation.Receive(before,qty,originalCost??StockCalculation.Round(net*d.RateToBase,precision),item.Item1,precision,purchase);
             await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,batch,qty,change.Value,net,tax,l.OriginalMovementId,purchase?change.Position.LastPurchasePrice:null,ct);
             if(change.Revaluation!=0) await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,null,0,change.Revaluation,0,0,null,null,ct);
             return new(net,tax,change.Value,change.Revaluation,originalInvoice);
@@ -151,8 +151,8 @@ public sealed partial class StockDocumentService
         if(d.TargetWarehouseId is int target) await Chronology(l.ProductId,target,d.Date,ct);
         foreach(var (batch,take) in batches)
         {
-            decimal Allocate(decimal value,decimal used)=>StockCalculation.Allocate(value,qty,take,usedQty,used,precision);
-            var costPart=Allocate(issue.Value,usedCost); var netPart=Allocate(net,usedNet); var taxPart=Allocate(tax,usedTax);
+            decimal Allocate(decimal value,decimal used,int scale)=>StockCalculation.Allocate(value,qty,take,usedQty,used,scale);
+            var costPart=Allocate(issue.Value,usedCost,precision); var netPart=Allocate(net,usedNet,currencyPrecision); var taxPart=Allocate(tax,usedTax,currencyPrecision);
             await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,batch,-take,-costPart,netPart,taxPart,l.OriginalMovementId,null,ct);
             if(d.TargetWarehouseId is int dest)
                 await AddMovement(document.Id,index,l.ProductId,dest,await TransferBatch(batch,dest,ct),take,costPart,0,0,null,null,ct);
@@ -179,7 +179,10 @@ public sealed partial class StockDocumentService
                 SELECT a.Payload,r.Precision,r.BaseCurrencyId FROM dbo.StockAccountSettings a JOIN dbo.LedgerRoundingSettings r ON r.BranchId=a.BranchId WHERE a.BranchId=@b
                 """,r=>(JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0))!,Convert.ToInt32(r.GetValue(1)),r.GetInt32(2)),ct,("@b",d.BranchId))).Single();
             var a=config.Item1; var precision=config.Item2;
-            if(config.Item3!=d.CurrencyId || d.RateToBase!=1) throw new InvalidOperationException("Stock posting currently requires the configured base currency.");
+            var baseId=config.Item3;
+            if(d.CurrencyId==baseId && d.RateToBase!=1) throw new InvalidOperationException("Base currency requires identity rate.");
+            var currencyPrecision=await CurrencyPrecision(d.CurrencyId,baseId,precision,ct);
+            if(!IsTrade(d.Kind) && (d.CurrencyId!=baseId || d.RateToBase!=1)) throw new InvalidOperationException("Internal movements are valued in base currency.");
             if(IsTrade(d.Kind))
             {
                 bool sale=d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn;
@@ -188,24 +191,30 @@ public sealed partial class StockDocumentService
                     throw new InvalidOperationException("Counterparty cannot also be a mapped stock account.");
             }
             var effects=new List<LineEffect>();
-            for(var i=0;i<d.Lines.Count;i++) effects.Add(await ApplyLine(actor,doc,i,precision,ct));
+            for(var i=0;i<d.Lines.Count;i++) effects.Add(await ApplyLine(actor,doc,i,precision,currencyPrecision,ct));
             var net=effects.Sum(e=>e.Net); var tax=effects.Sum(e=>e.Tax); var cost=effects.Sum(e=>e.Cost);
             var lines=new List<JournalLineDefinition>();
-            void Debit(int account,decimal signed)
+            void Debit(int account,decimal signed,bool inInvoiceCurrency=false)
             {
-                if(signed!=0) lines.Add(new(account,signed>0?JournalSide.Debit:JournalSide.Credit,new(new(Math.Abs(signed),d.CurrencyId),d.CurrencyId,1,d.Date)));
+                if(signed!=0) lines.Add(new(account,signed>0?JournalSide.Debit:JournalSide.Credit,new(new(Math.Abs(signed),inInvoiceCurrency?d.CurrencyId:baseId),baseId,inInvoiceCurrency?d.RateToBase:1,d.Date)));
             }
             if(d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn)
             {
                 int sign=d.Kind==StockDocumentKind.Sale?1:-1;
-                Debit(d.CounterpartyAccountId,sign*(net+tax)); Debit(a.SalesAccountId,-sign*net); Debit(a.OutputTaxAccountId,-sign*tax);
+                Debit(d.CounterpartyAccountId,sign*(net+tax),true); Debit(a.SalesAccountId,-sign*net*d.RateToBase); Debit(a.OutputTaxAccountId,-sign*tax*d.RateToBase);
                 Debit(a.CostAccountId,sign*cost); Debit(a.StockAccountId,-sign*cost);
             }
             else if(d.Kind is StockDocumentKind.Purchase or StockDocumentKind.PurchaseReturn)
             {
                 int sign=d.Kind==StockDocumentKind.Purchase?1:-1;
-                Debit(a.StockAccountId,sign*cost); Debit(a.InputTaxAccountId,sign*tax); Debit(d.CounterpartyAccountId,-sign*(net+tax));
-                Debit(a.AdjustmentAccountId,sign*(net-cost));
+                if(d.Kind==StockDocumentKind.Purchase)
+                    foreach(var effect in effects) Debit(a.StockAccountId,effect.Net*d.RateToBase);
+                else
+                {
+                    Debit(a.StockAccountId,sign*cost);
+                    Debit(a.AdjustmentAccountId,sign*(net*d.RateToBase-cost));
+                }
+                Debit(a.InputTaxAccountId,sign*tax*d.RateToBase); Debit(d.CounterpartyAccountId,-sign*(net+tax),true);
             }
             else
             {
@@ -214,13 +223,16 @@ public sealed partial class StockDocumentService
             }
             var diff=effects.Sum(e=>e.Revaluation); Debit(a.StockAccountId,diff); Debit(a.AdjustmentAccountId,-diff);
             var draft=JournalDraft.Create(d.BranchId,new FiscalPeriod("Stock",d.Date,d.Date),d.Date,d.SourceKey,lines);
+            var offsets=d.Credit && IsReturn(d.Kind)?await ReturnOffsets(d,effects,baseId,precision,ct):[];
+            if(offsets.Count>0 && d.CurrencyId!=baseId)
+                await SaveBasis(d.SourceKey,d.CounterpartyAccountId,net+tax,offsets.Sum(x=>x.Book+x.RefundBook),null,ct);
             var journal=await journals.PostDocumentAsync(actor,draft,ct);
             var number=await sql.ScalarAsync("""
                 UPDATE dbo.DocumentNumbers SET LastNumber=LastNumber+1 WHERE BranchId=@b AND TypeCode=@t AND DocumentYear=@y;
                 IF @@ROWCOUNT=0 INSERT dbo.DocumentNumbers VALUES(@b,@t,@y,1);
                 SELECT LastNumber FROM dbo.DocumentNumbers WHERE BranchId=@b AND TypeCode=@t AND DocumentYear=@y
                 """,ct,("@b",d.BranchId),("@t",type),("@y",d.Date.Year));
-            if(d.Credit) await RecordDebt(doc,effects,journal,ct);
+            if(d.Credit) await RecordDebt(doc,effects,journal,offsets,precision,ct);
             await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET State=2,Version=Version+1,Number=@n,JournalId=@j WHERE DocumentId=@i",ct,("@i",id),("@j",journal),("@n",number));
             await Audit(actor,"STOCK_DOCUMENT_POSTED","StockDocuments",id,ct);
             return await Read(id,ct);

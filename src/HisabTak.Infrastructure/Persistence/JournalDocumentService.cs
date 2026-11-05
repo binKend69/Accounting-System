@@ -135,9 +135,9 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
             reader.IsDBNull(7) ? null : reader.GetInt64(7), reader.IsDBNull(8) ? null : reader.GetInt64(8), reader.GetInt32(10)), reader.GetString(9));
     }
 
-    private static string Serialize(JournalDraft draft)
+    internal static string Serialize(JournalDraft draft)
     {
-        static decimal Normalize(decimal value) => decimal.Parse(value.ToString("G29", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        static decimal Normalize(decimal value) => decimal.Parse(value.ToString("G29", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture);
         return JsonSerializer.Serialize(new Payload(draft.Kind, draft.BranchId, draft.EntryDate, draft.SourceKey,
             draft.Lines.Select(l => new Line(l.AccountId, l.Side, Normalize(l.Valuation.Original.Amount), l.Valuation.Original.CurrencyId,
                 Normalize(l.Valuation.RateToBase), l.Valuation.ExactBaseAmount.CurrencyId, l.Valuation.OperationDate)).ToArray()));

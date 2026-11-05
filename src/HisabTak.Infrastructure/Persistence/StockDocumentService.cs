@@ -60,6 +60,29 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             await Audit(actor,"PRODUCT_CREATED","StockProducts",id,ct);
             return id;
         });
+    private async Task<int> CurrencyPrecision(int currencyId,int baseId,int basePrecision,CancellationToken ct)
+    {
+        var code=await db.Currencies.Where(x=>x.Id==currencyId && x.IsActive).Select(x=>x.Code).SingleAsync(ct);
+        if(currencyId==baseId)return basePrecision;
+        if(code is "YER" or "SAR" or "USD")return 2;
+        var key="Stock.CurrencyPrecision."+currencyId;
+        var value=await db.CustomSettings.Where(x=>x.Key==key).Select(x=>x.Value).SingleOrDefaultAsync(ct);
+        return int.TryParse(value,out var precision) && precision is >=0 and <=8?precision:throw new InvalidOperationException("Configure currency precision before use.");
+    }
+    public Task SetCurrencyPrecisionAsync(int actor,int currencyId,int precision,CancellationToken ct=default) =>
+        Write(actor,PermissionCodes.SetupManage,ct,async () =>
+        {
+            if(precision is <0 or >8)throw new ArgumentOutOfRangeException(nameof(precision));
+            var currency=await db.Currencies.SingleAsync(x=>x.Id==currencyId && x.IsActive,ct);
+            if(currency.IsBaseCurrency || currency.Code is "YER" or "SAR" or "USD")throw new InvalidOperationException("This currency already has a defined precision.");
+            var key="Stock.CurrencyPrecision."+currencyId;
+            var existing=await db.CustomSettings.SingleOrDefaultAsync(x=>x.Key==key,ct);
+            if(existing!=null && existing.Value!=precision.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                throw new InvalidOperationException("Configured currency precision cannot be overwritten.");
+            if(existing==null)db.CustomSettings.Add(new Domain.Setup.CustomSetting(key,precision.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            await Audit(actor,"STOCK_CURRENCY_PRECISION","Currencies",currencyId,ct);
+            return currencyId;
+        });
     public Task ChangeCostMethodAsync(int actor,int productId,CostMethod method,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.SetupManage,ct,async () =>
         {
@@ -96,11 +119,18 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         {
             await Branch(actor,branchId,ct);
             int[] ids = [accounts.StockAccountId,accounts.SalesAccountId,accounts.CostAccountId,accounts.AdjustmentAccountId,accounts.InputTaxAccountId,accounts.OutputTaxAccountId];
+            if(accounts.FxGainAccountId.HasValue!=accounts.FxLossAccountId.HasValue) throw new ArgumentException("Configure both FX accounts.");
+            if(accounts.FxGainAccountId is int gain && accounts.FxLossAccountId is int loss) ids=[..ids,gain,loss];
             var currency = await db.Companies.Where(x=>x.IsActive).Select(x=>x.BaseCurrencyId).SingleAsync(ct);
-            if (ids.Distinct().Count()!=6 || currency is null || await db.Accounts.CountAsync(x=>ids.Contains(x.Id) && x.BranchId==branchId && x.CurrencyId==currency && x.IsActive && !x.IsSuspended,ct)!=6)
+            if (ids.Distinct().Count()!=ids.Length || currency is null || await db.Accounts.CountAsync(x=>ids.Contains(x.Id) && x.BranchId==branchId && x.CurrencyId==currency && x.IsActive && !x.IsSuspended,ct)!=ids.Length)
                 throw new InvalidOperationException("Choose six distinct active branch accounts in base currency.");
             if(await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockDocuments WHERE BranchId=@b AND State>=2",ct,("@b",branchId))>0)
-                throw new InvalidOperationException("Stock account mappings are fixed after first posting.");
+            {
+                var previous=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0))!,ct,("@b",branchId))).Single();
+                if((previous with { FxGainAccountId=null,FxLossAccountId=null })!=(accounts with { FxGainAccountId=null,FxLossAccountId=null }) ||
+                    previous.FxGainAccountId!=null && previous!=accounts)
+                    throw new InvalidOperationException("Stock account mappings are fixed after first posting.");
+            }
             await sql.ExecuteAsync("UPDATE dbo.StockAccountSettings SET Payload=@a WHERE BranchId=@b; IF @@ROWCOUNT=0 INSERT dbo.StockAccountSettings VALUES(@b,@a)",ct,("@b",branchId),("@a",JsonSerializer.Serialize(accounts)));
             await Audit(actor,"STOCK_ACCOUNTS_CONFIGURED","Branches",branchId,ct);
             return branchId;

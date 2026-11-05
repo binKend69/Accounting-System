@@ -17,6 +17,7 @@ public partial class StockWindow : Window
     private readonly int actor,branch,currency;
     private readonly ObservableCollection<DisplayLine> rows=[];
     private readonly AccountLookup[] accounts;
+    private readonly AccountingLookup[] currencies;
     private StockLookups lookups=new([],[],null);
     private IReadOnlyList<ProductInfo> products=[];
     private StockDocument? current;
@@ -30,9 +31,9 @@ public partial class StockWindow : Window
     private sealed record BatchChoice(long Id,string Label);
     private sealed record BalanceRow(string Product,string Warehouse,decimal Quantity,decimal BookValue);
     private static readonly Choice[] Kinds=[new(1,"افتتاحي مخزون"),new(2,"شراء"),new(3,"بيع"),new(4,"مردود شراء"),new(5,"مردود بيع"),new(6,"تحويل مخزني"),new(7,"زيادة جرد"),new(8,"نقص جرد")];
-    public StockWindow(IServiceScopeFactory scopes,int actor,int branch,int currency,AccountLookup[] accounts)
+    public StockWindow(IServiceScopeFactory scopes,int actor,int branch,int currency,AccountLookup[] accounts,AccountingLookup[]? currencies=null)
     {
-        InitializeComponent(); this.scopes=scopes; this.actor=actor; this.branch=branch; this.currency=currency; this.accounts=accounts;
+        InitializeComponent(); this.scopes=scopes; this.actor=actor; this.branch=branch; this.currency=currency; this.accounts=accounts;this.currencies=currencies??[new(currency,currency.ToString())];
         Bind(Kind,Kinds); Kind.SelectedValue=(int)StockDocumentKind.Purchase;
         Lines.ItemsSource=rows; EntryDate.SelectedDate=ReverseDate.SelectedDate=AsOf.SelectedDate=PaymentDate.SelectedDate=DateTime.Today;
         Item.SelectionChanged+=RefreshLineOptions; Warehouse.SelectionChanged+=RefreshLineOptions;
@@ -78,12 +79,16 @@ public partial class StockWindow : Window
         Bind(BaseUnit,units);Bind(ExtraUnit,units);
         var items=products.Select(x=>new Choice(x.Id,x.Code+" · "+x.Name));
         Bind(Item,items);Bind(SetupProduct,items);
+        var firstLoad=InvoiceCurrency.Items.Count==0;Bind(InvoiceCurrency,currencies.Select(x=>new Choice(x.Id,x.Label))); Bind(CurrencySettings,currencies.Select(x=>new Choice(x.Id,x.Label)));
+        if(firstLoad)InvoiceCurrency.SelectedValue=currency;
         var ac=accounts.Where(x=>x.CurrencyId==currency).Select(x=>new Choice(x.Id,x.Label));
-        foreach(var box in new[]{StockAccount,SalesAccount,CostAccount,Adjustment,InputTax,OutputTax,Party,Cash}) Bind(box,ac);
+        foreach(var box in new[]{StockAccount,SalesAccount,CostAccount,Adjustment,InputTax,OutputTax}) Bind(box,ac);
+        foreach(var box in new[]{Party,Cash}) Bind(box,accounts.Select(x=>new Choice(x.Id,x.Label)));
+        foreach(var box in new[]{FxGain,FxLoss}) Bind(box,new[]{new Choice(0,"غير محدد")}.Concat(ac));
         if(lookups.Accounts is InventoryAccounts a)
         {
             StockAccount.SelectedValue=a.StockAccountId;SalesAccount.SelectedValue=a.SalesAccountId;CostAccount.SelectedValue=a.CostAccountId;
-            Adjustment.SelectedValue=a.AdjustmentAccountId;InputTax.SelectedValue=a.InputTaxAccountId;OutputTax.SelectedValue=a.OutputTaxAccountId;
+            Adjustment.SelectedValue=a.AdjustmentAccountId;InputTax.SelectedValue=a.InputTaxAccountId;OutputTax.SelectedValue=a.OutputTaxAccountId;FxGain.SelectedValue=a.FxGainAccountId??0;FxLoss.SelectedValue=a.FxLossAccountId??0;
         }
         await LineOptions();
     }
@@ -111,7 +116,7 @@ public partial class StockWindow : Window
     {
         var kind=(StockDocumentKind)Id(Kind);
         var trade=kind is StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
-        return new(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,currency,1,trade?Id(Party):0,
+        return new(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),trade?Id(Party):0,
             trade && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true);
     }
     private bool Dirty()
@@ -125,12 +130,13 @@ public partial class StockWindow : Window
     private void Buttons()
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
-        foreach(var control in new Control[]{Warehouse,Target,Party,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
+        foreach(var control in new Control[]{Warehouse,Target,Party,InvoiceCurrency,InvoiceRate,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
         Kind.IsEnabled=current==null;
     }
     private void ShowDocument(StockDocument doc)
     {
         current=doc;var d=doc.Draft;source=d.SourceKey;Kind.SelectedValue=(int)d.Kind;EntryDate.SelectedDate=d.Date.ToDateTime(TimeOnly.MinValue);
+        InvoiceCurrency.SelectedValue=d.CurrencyId;InvoiceRate.Text=d.RateToBase.ToString("G29",CultureInfo.InvariantCulture);
         Warehouse.SelectedValue=d.WarehouseId;Target.SelectedValue=d.TargetWarehouseId;Party.SelectedValue=d.CounterpartyAccountId;Credit.IsChecked=d.Credit;
         TaxEnabled.IsChecked=d.TaxEnabled;TaxRate.Text=(d.TaxRate*100).ToString("G29",CultureInfo.InvariantCulture);Inclusive.IsChecked=d.PricesIncludeTax;
         rows.Clear();foreach(var l in d.Lines)rows.Add(new(l,Product(l.ProductId),UnitName(l.UnitId)));
@@ -139,7 +145,7 @@ public partial class StockWindow : Window
     private void NewDocument(object sender,RoutedEventArgs e)
     {
         if(!Discard())return;current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
-        Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
+        InvoiceCurrency.SelectedValue=currency;InvoiceRate.Text="1";Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
     }
     private async void AddLine(object sender,RoutedEventArgs e)=>await Run(()=> {
         if(current?.State is 2 or 3)return Task.CompletedTask;
@@ -195,12 +201,13 @@ public partial class StockWindow : Window
     private async void ChangeMethod(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ChangeCostMethodAsync(actor,Id(SetupProduct),ExistingMethod.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase));await LoadLookups();Status.Text="حفظت طريقة التكلفة.";});
     private async void CreateUnit(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.AddUnitAsync(actor,Id(SetupProduct),Id(ExtraUnit),Number(Factor)));await LineOptions();Status.Text="حفظ تحويل الوحدة.";});
     private async void CreateBatch(object sender,RoutedEventArgs e)=>await Run(async()=>{await Use(s=>s.CreateBatchAsync(actor,branch,Id(SetupProduct),Id(BatchWarehouse),BatchCode.Text,Day(Expiry)));await LineOptions();Status.Text="تم إنشاء الدفعة.";});
-    private async void Configure(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ConfigureAsync(actor,branch,new(Id(StockAccount),Id(SalesAccount),Id(CostAccount),Id(Adjustment),Id(InputTax),Id(OutputTax))));Status.Text="حفظت حسابات الترحيل.";});
+    private async void SetPrecision(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetCurrencyPrecisionAsync(actor,Id(CurrencySettings),int.Parse(Decimals.Text,CultureInfo.InvariantCulture)));Status.Text="حفظت دقة العملة.";});
+    private async void Configure(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ConfigureAsync(actor,branch,new(Id(StockAccount),Id(SalesAccount),Id(CostAccount),Id(Adjustment),Id(InputTax),Id(OutputTax),Id(FxGain)==0?null:Id(FxGain),Id(FxLoss)==0?null:Id(FxLoss))));Status.Text="حفظت حسابات الترحيل.";});
     private async void Settle(object sender,RoutedEventArgs e)=>await Run(async()=>{
         if(Debts.SelectedItem is not DebtBalance debt){Status.Text="اختر فاتورة من قائمة الذمم.";return;}
-        var candidate=new DebtPayment(pendingPayment?.SourceKey??Guid.NewGuid(),debt.DocumentId,Day(PaymentDate),Number(Payment),Id(Cash));
+        var candidate=new DebtPayment(pendingPayment?.SourceKey??Guid.NewGuid(),debt.DocumentId,Day(PaymentDate),Number(Payment),Id(Cash),string.IsNullOrWhiteSpace(CashAmount.Text)?null:Number(CashAmount),string.IsNullOrWhiteSpace(CashRate.Text)?null:Number(CashRate));
         if(pendingPayment!=null && candidate!=pendingPayment) candidate=candidate with {SourceKey=Guid.NewGuid()};
         if(MessageBox.Show(this,$"تسجيل سداد {candidate.Amount} للفاتورة {debt.DocumentId}؟","تأكيد",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-        pendingPayment=candidate;await Use(s=>s.SettleAsync(actor,candidate));await RefreshLists();pendingPayment=null;Payment.Clear();Status.Text="حفظ السداد وقيده.";
+        pendingPayment=candidate;await Use(s=>s.SettleAsync(actor,candidate));await RefreshLists();pendingPayment=null;Payment.Clear();CashAmount.Clear();CashRate.Clear();Status.Text="حفظ السداد وقيده.";
     });
 }

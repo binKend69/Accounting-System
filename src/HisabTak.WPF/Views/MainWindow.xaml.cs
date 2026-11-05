@@ -29,7 +29,7 @@ public partial class MainWindow : Window
     private async void StockWindow_Click(object sender,RoutedEventArgs e) => await Run(async () =>
     {
         if (baseCurrencyId is not int currency) throw new InputException("اختر عملة الأساس أولاً.");
-        var window = new StockWindow(scopes, Actor, Branch, currency, Accounts.ToArray()) { Owner = this };
+        var window = new StockWindow(scopes, Actor, Branch, currency, Accounts.ToArray(), CurrencyBox.Items.Cast<AccountingLookup>().ToArray()) { Owner = this };
         await window.LoadAsync(); window.ShowDialog();
         StatusText.Text = "تم إغلاق مساحة المخزون.";
     });

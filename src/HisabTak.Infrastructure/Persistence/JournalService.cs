@@ -164,7 +164,11 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
                 if (!await reader.ReadAsync(ct)) throw new InvalidOperationException("Configure an explicit rounding account and precision before posting.");
                 accountId = reader.GetInt32(0); precision = reader.GetInt32(1);
             }
-            postingLines = LedgerRounding.Calculate(draft, precision.Value, accountId);
+            (int,decimal,decimal)? allocation=null;
+            await using(var basis=await sql.CommandAsync("SELECT AccountId,Principal,BookValue FROM dbo.StockBookBasis WHERE SourceKey=@source",ct,("@source",draft.SourceKey)))
+            await using(var basisReader=await basis.ExecuteReaderAsync(ct))
+                if(await basisReader.ReadAsync(ct)) allocation=(basisReader.GetInt32(0),basisReader.GetDecimal(1),basisReader.GetDecimal(2));
+            postingLines = LedgerRounding.Calculate(draft, precision.Value, accountId,allocation);
         }
         foreach (var postingLine in postingLines)
         {

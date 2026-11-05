@@ -2,6 +2,7 @@ using System.Text.Json;
 using HisabTak.Application.Inventory;
 using HisabTak.Domain.Accounting;
 using HisabTak.Domain.Security;
+using HisabTak.Domain.Inventory;
 using Microsoft.EntityFrameworkCore;
 
 namespace HisabTak.Infrastructure.Persistence;
@@ -23,7 +24,24 @@ public sealed partial class StockDocumentService
         await authorization.DemandAsync(actor,PermissionCodes.JournalRead,ct); await Branch(actor,branchId,ct);
         return await ReadDebts(branchId,ct);
     }
-    private async Task RecordDebt(StockDocument doc,List<LineEffect> effects,long journal,CancellationToken ct)
+    private sealed record ReturnOffset(long Invoice,decimal Principal,decimal Book,decimal Refund,decimal RefundBook);
+    private async Task<List<ReturnOffset>> ReturnOffsets(StockDocumentDraft d,List<LineEffect> effects,int baseId,int precision,CancellationToken ct)
+    {
+        var result=new List<ReturnOffset>();
+        var debts=await ReadDebts(d.BranchId,ct);
+        foreach(var group in effects.GroupBy(x=>x.Invoice!.Value))
+        {
+            var debt=debts.Single(x=>x.DocumentId==group.Key);
+            var total=group.Sum(x=>x.Net+x.Tax);var principal=Math.Min(total,debt.RemainingAmount);
+            var book=principal==0?0:SettlementAllocation.Allocate(new(debt.OriginalAmount,debt.CurrencyId),new(debt.OriginalBookValue,baseId),
+                new(debt.RemainingAmount,debt.CurrencyId),new(principal,debt.CurrencyId),new(debt.RemainingBookValue,baseId),precision).Amount;
+            result.Add(new(group.Key,principal,book,total-principal,StockCalculation.Round((total-principal)*d.RateToBase,precision)));
+        }
+        return result;
+    }
+    private Task SaveBasis(Guid source,int account,decimal amount,decimal book,byte[]? signature,CancellationToken ct) =>
+        sql.ExecuteAsync("INSERT dbo.StockBookBasis VALUES(@k,@a,@p,@b,@h)",ct,("@k",source),("@a",account),("@p",amount),("@b",book),("@h",signature));
+    private async Task RecordDebt(StockDocument doc,List<LineEffect> effects,long journal,List<ReturnOffset> offsets,int precision,CancellationToken ct)
     {
         var d=doc.Draft; var total=effects.Sum(x=>x.Net+x.Tax);
         if(!IsReturn(d.Kind))
@@ -42,27 +60,18 @@ public sealed partial class StockDocumentService
                     if(exposure>max) throw new InvalidOperationException("Credit limit exceeded.");
                 }
             }
-            await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@v)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.Sale),("@v",total));
+            await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@book)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.Sale),("@v",total),("@book",StockCalculation.Round(total*d.RateToBase,precision)));
             return;
         }
-        decimal refundable=0;
-        foreach(var group in effects.GroupBy(x=>x.Invoice!.Value))
-        {
-            var debt=(await ReadDebts(d.BranchId,ct)).Single(x=>x.DocumentId==group.Key);
-            var value=group.Sum(x=>x.Net+x.Tax);
-            if(value<=0) throw new InvalidOperationException("Return amount must be positive.");
-            var offset=Math.Min(value,debt.RemainingAmount);
-            refundable+=value-offset;
-            if(offset==0) continue;
+        foreach(var offset in offsets.Where(x=>x.Principal>0))
             await sql.ExecuteAsync("""
                 INSERT dbo.StockDebtAllocations(InvoiceId,SourceKey,ReturnDocumentId,JournalId,Amount,BookValue,Payload)
-                VALUES(@i,NEWID(),@return,@j,@v,@v,@p)
-                """,ct,("@i",group.Key),("@return",doc.Id),("@j",journal),("@v",offset),("@p",JsonSerializer.Serialize(new { doc.Id })));
-        }
-        // A paid invoice can still be returned. The excess is now owed in the opposite direction.
-        if(refundable>0)
-            await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@v)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),
-                ("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.PurchaseReturn),("@v",refundable));
+                VALUES(@i,NEWID(),@return,@j,@v,@book,@p)
+                """,ct,("@i",offset.Invoice),("@return",doc.Id),("@j",journal),("@v",offset.Principal),("@book",offset.Book),("@p",JsonSerializer.Serialize(new { doc.Id })));
+        var refund=offsets.Sum(x=>x.Refund);
+        if(refund>0)
+            await sql.ExecuteAsync("INSERT dbo.StockDebts VALUES(@i,@a,@c,@r,@v,@book)",ct,("@i",doc.Id),("@a",d.CounterpartyAccountId),
+                ("@c",d.CurrencyId),("@r",d.Kind==StockDocumentKind.PurchaseReturn),("@v",refund),("@book",offsets.Sum(x=>x.RefundBook)));
     }
     public Task<long> SettleAsync(int actor,DebtPayment payment,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,async () =>
@@ -79,15 +88,28 @@ public sealed partial class StockDocumentService
             await FreeSource(payment.SourceKey,ct);
             var debt=(await ReadDebts(d.BranchId,ct)).Single(x=>x.DocumentId==invoice.Id);
             if(payment.Date<d.Date || payment.Amount<=0 || payment.Amount>debt.RemainingAmount) throw new InvalidOperationException("Invalid settlement date or amount.");
-            var precision=checked((int)await sql.ScalarAsync("SELECT Precision FROM dbo.LedgerRoundingSettings WHERE BranchId=@b",ct,("@b",d.BranchId)));
-            Domain.Inventory.StockCalculation.Exact(payment.Amount,precision);
-            await DemandClass(payment.CashAccountId,d.BranchId,debt.CurrencyId,["CASH","BANK"],ct);
-            var book=SettlementAllocation.Allocate(new(debt.OriginalAmount,debt.CurrencyId),new(debt.OriginalBookValue,debt.CurrencyId),
-                new(debt.RemainingAmount,debt.CurrencyId),new(payment.Amount,debt.CurrencyId),new(debt.RemainingBookValue,debt.CurrencyId),precision);
-            var v=new BaseCurrencyValuation(new(payment.Amount,debt.CurrencyId),debt.CurrencyId,1,payment.Date);
-            var proposal=JournalDraft.Create(d.BranchId,new FiscalPeriod("Settlement",payment.Date,payment.Date),
-                payment.Date,payment.SourceKey,[new(payment.CashAccountId,debt.Receivable?JournalSide.Debit:JournalSide.Credit,v),
-                new(debt.AccountId,debt.Receivable?JournalSide.Credit:JournalSide.Debit,v)]);
+            var config=(await Rows("""
+                SELECT r.BaseCurrencyId,r.Precision,a.Payload FROM dbo.LedgerRoundingSettings r JOIN dbo.StockAccountSettings a ON a.BranchId=r.BranchId WHERE a.BranchId=@b
+                """,r=>(r.GetInt32(0),r.GetInt32(1),JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(2))!),ct,("@b",d.BranchId))).Single();
+            var (baseId,precision,settings)=config;
+            StockCalculation.Exact(payment.Amount,await CurrencyPrecision(debt.CurrencyId,baseId,precision,ct));
+            var cashCurrency=await db.Accounts.Where(x=>x.Id==payment.CashAccountId).Select(x=>x.CurrencyId).SingleAsync(ct);
+            await DemandClass(payment.CashAccountId,d.BranchId,cashCurrency,["CASH","BANK"],ct);
+            var tender=payment.CashAmount??(cashCurrency==debt.CurrencyId?payment.Amount:throw new ArgumentException("Specify the actual cash amount."));
+            var cashRate=payment.CashRateToBase??(cashCurrency==baseId?1:throw new ArgumentException("Specify the payment date rate."));
+            StockCalculation.Exact(tender,await CurrencyPrecision(cashCurrency,baseId,precision,ct));
+            var book=SettlementAllocation.Allocate(new(debt.OriginalAmount,debt.CurrencyId),new(debt.OriginalBookValue,baseId),
+                new(debt.RemainingAmount,debt.CurrencyId),new(payment.Amount,debt.CurrencyId),new(debt.RemainingBookValue,baseId),precision);
+            var principal=new BaseCurrencyValuation(new(payment.Amount,debt.CurrencyId),baseId,d.RateToBase,payment.Date);
+            var cash=new BaseCurrencyValuation(new(tender,cashCurrency),baseId,cashRate,payment.Date);
+            var exchange=new ExchangeSettlementCalculation(new(new(debt.RemainingAmount,debt.CurrencyId),baseId,d.RateToBase,payment.Date),
+                principal.Original,cash.ExactBaseAmount,debt.Receivable?DebtDirection.Receivable:DebtDirection.Payable);
+            var lines=new List<JournalLineDefinition>{new(payment.CashAccountId,debt.Receivable?JournalSide.Debit:JournalSide.Credit,cash),
+                new(debt.AccountId,debt.Receivable?JournalSide.Credit:JournalSide.Debit,principal)};
+            if(exchange.Gain.Amount>0) lines.Add(new(settings.FxGainAccountId??throw new InvalidOperationException("Configure FX gain account."),JournalSide.Credit,new(exchange.Gain,baseId,1,payment.Date)));
+            if(exchange.Loss.Amount>0) lines.Add(new(settings.FxLossAccountId??throw new InvalidOperationException("Configure FX loss account."),JournalSide.Debit,new(exchange.Loss,baseId,1,payment.Date)));
+            var proposal=JournalDraft.Create(d.BranchId,new FiscalPeriod("Settlement",payment.Date,payment.Date),payment.Date,payment.SourceKey,lines);
+            await SaveBasis(payment.SourceKey,debt.AccountId,payment.Amount,book.Amount,JournalDocumentStrategy.SettlementSignature(proposal),ct);
             var voucher=await vouchers.SaveVoucherAsync(actor,proposal,debt.Receivable?"RECEIPT_VOUCHER":"PAYMENT_VOUCHER",ct);
             var posted=await vouchers.PostVersionAsync(actor,voucher.Id,voucher.Version,ct);
             var journal=posted.JournalId!.Value;

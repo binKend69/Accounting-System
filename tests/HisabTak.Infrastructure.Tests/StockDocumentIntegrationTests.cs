@@ -66,6 +66,35 @@ public sealed partial class LedgerIntegrationTests
         Assert.Equal(300,(await Debts(test,s)).Single(x=>x.DocumentId==sale.Id).RemainingAmount);
     }
     [SqlServerFact]
+    public async Task Foreign_invoice_and_final_settlement_reconcile_principal_book_and_realized_exchange()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);var f=s.F;
+        await using var database=test.Context();
+        var customerGroup=(await database.AccountGeneralGroups.SingleAsync(x=>x.SystemCode=="CUSTOMER")).Id;
+        var foreignCustomer=await With<IChartOfAccountsService,int>(test,x=>x.CreateClassifiedAccountAsync(f.Owner,f.Branch,"009280","SAR customer",f.Group,f.OtherCurrency,1,customerGroup));
+        Task<int> Account(string code)=>With<IChartOfAccountsService,int>(test,x=>x.CreateAccountAsync(f.Owner,code,code,f.Group,f.Currency,1,f.Branch));
+        var gain=await Account("009281");var loss=await Account("009282");
+        var settings=(await With<IStockDocumentService,StockLookups>(test,x=>x.LookupsAsync(f.Owner,f.Branch))).Accounts!;
+        await Change<IStockDocumentService>(test,x=>x.ConfigureAsync(f.Owner,f.Branch,settings with { FxGainAccountId=gain,FxLossAccountId=loss }));
+        await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,3,10)));
+        var sale=await Trade(test,s,Draft(s,StockDocumentKind.Sale,foreignCustomer,new StockLine(s.Product,s.Unit,3,1)) with {Credit=true,CurrencyId=f.OtherCurrency,RateToBase=33.33333333m});
+        var opening=Assert.Single(await Debts(test,s));Assert.Equal(3,opening.OriginalAmount);Assert.Equal(100,opening.OriginalBookValue);
+        foreach(var expected in new[]{33.33m,33.33m,33.34m})
+        {
+            var payment=new DebtPayment(Guid.NewGuid(),sale.Id,Date,1,s.Cash,35,1);
+            var journal=await With<IStockDocumentService,long>(test,x=>x.SettleAsync(f.Owner,payment));
+            var posted=await With<IJournalService,PostedJournal>(test,x=>x.GetAsync(f.Owner,journal));
+            var principal=Assert.Single(posted.Lines,x=>x.AccountId==foreignCustomer);
+            Assert.Equal(expected,principal.BookBaseAmount);Assert.Equal(33.33333333m,principal.RateToBase);
+            Assert.Contains(posted.Lines,x=>x.AccountId==gain && x.Side==Domain.Accounting.JournalSide.Credit);
+        }
+        var closed=Assert.Single(await Debts(test,s));Assert.Equal(0,closed.RemainingAmount);Assert.Equal(0,closed.RemainingBookValue);
+        var balances=await With<IJournalService,IReadOnlyList<LedgerBalance>>(test,x=>x.BalancesAsync(f.Owner,f.Branch,f.OtherCurrency,Date));
+        var customer=Assert.Single(balances,x=>x.AccountId==foreignCustomer);
+        Assert.Equal(customer.Debit,customer.Credit);Assert.Equal(customer.BaseDebit,customer.BaseCredit);
+    }
+
+    [SqlServerFact]
     public async Task Paid_credit_invoice_return_creates_refund_and_payment_voucher()
     {
         await using var test=await SqlTestDatabase.CreateAsync(); var s=await StoreAsync(test);
