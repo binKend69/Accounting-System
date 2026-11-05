@@ -78,6 +78,7 @@ public sealed class ReferenceDataSeeder(HisabTakDbContext database)
 
     private static readonly (string Code, string Name, (string Code, string Name)[] Children)[] PermissionDefinitions =
     [
+        ("INVENTORY", "المخزون", [(PermissionCodes.BatchOverride, "اختيار دفعة يدويًا")]),
         ("SETUP", "الإعداد", [(PermissionCodes.SetupManage, "إدارة الإعداد")]),
         ("SECURITY", "المستخدمون", [(PermissionCodes.UsersManage, "إدارة المستخدمين")]),
         ("AUDIT", "التدقيق", [(PermissionCodes.AuditRead, "عرض التدقيق")]),

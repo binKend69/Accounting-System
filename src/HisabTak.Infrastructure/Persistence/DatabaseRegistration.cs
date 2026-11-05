@@ -42,6 +42,7 @@ public static class DatabaseRegistration
         services.AddScoped<IJournalDocumentService, JournalDocumentService>();
         services.AddScoped<IAccountingWorkspaceService, AccountingWorkspaceService>();
         services.AddScoped<HisabTak.Application.Inventory.IInventorySetupService, InventorySetupService>();
+        services.AddScoped<HisabTak.Application.Inventory.IStockDocumentService, StockDocumentService>();
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

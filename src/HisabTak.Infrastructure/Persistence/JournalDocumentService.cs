@@ -43,7 +43,7 @@ public sealed class JournalDocumentService(HisabTakDbContext db, IAuthorizationS
             await transaction.CommitAsync(cancellationToken);
             return saved;
         }
-        if (await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalEntries WHERE SourceKey=@source", cancellationToken, ("@source", draft.SourceKey)) != 0)
+        if (await sql.ScalarAsync("SELECT (SELECT COUNT_BIG(*) FROM dbo.JournalEntries WHERE SourceKey=@source)+(SELECT COUNT_BIG(*) FROM dbo.StockDocuments WHERE SourceKey=@source)", cancellationToken, ("@source", draft.SourceKey)) != 0)
             throw new InvalidOperationException("Source reference already belongs to a standalone journal.");
         var id = await sql.ScalarAsync("""
             INSERT dbo.JournalDocuments(BranchId,TypeCode,EntryDate,SourceKey,DocumentState,Payload,CreatedBy)

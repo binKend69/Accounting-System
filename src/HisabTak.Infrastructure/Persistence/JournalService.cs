@@ -74,7 +74,7 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
             ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await DatabaseLock.AcquireAsync(db, "HisabTak.Accounting.Periods", cancellationToken);
         await authorization.DemandAsync(actorId, PermissionCodes.JournalPost, cancellationToken);
-        if (!documentOperation && await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE SourceKey=@source", cancellationToken, ("@source", draft.SourceKey)) > 0)
+        if (!documentOperation && await sql.ScalarAsync("SELECT (SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE SourceKey=@source)+(SELECT COUNT_BIG(*) FROM dbo.StockDocuments WHERE SourceKey=@source)", cancellationToken, ("@source", draft.SourceKey)) > 0)
             throw new InvalidOperationException("Post the owning document through its coordinator.");
         var id = await WriteAsync(actorId, draft, cancellationToken);
         if (tx is not null) await tx.CommitAsync(cancellationToken);
@@ -93,7 +93,7 @@ public sealed class JournalService(HisabTakDbContext db, IAuthorizationService a
             ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
         await DatabaseLock.AcquireAsync(db, "HisabTak.Accounting.Periods", cancellationToken);
         await authorization.DemandAsync(actorId, PermissionCodes.JournalReverse, cancellationToken);
-        if (!documentOperation && await sql.ScalarAsync("SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE JournalEntryId=@id", cancellationToken, ("@id", originalId)) > 0)
+        if (!documentOperation && await sql.ScalarAsync("SELECT (SELECT COUNT_BIG(*) FROM dbo.JournalDocuments WHERE JournalEntryId=@id)+(SELECT COUNT_BIG(*) FROM dbo.StockDocuments WHERE JournalId=@id)", cancellationToken, ("@id", originalId)) > 0)
             throw new InvalidOperationException("Reverse the owning document through its coordinator.");
         var original = await ReadAsync(originalId, cancellationToken);
         await AccountingAccess.BranchAsync(db, authorization, actorId, original.BranchId, cancellationToken);
