@@ -23,8 +23,11 @@ public sealed record DebtBalance(long DocumentId, int AccountId, int CurrencyId,
     decimal OriginalAmount, decimal RemainingAmount, decimal OriginalBookValue, decimal RemainingBookValue);
 public sealed record DebtPayment(Guid SourceKey, long InvoiceId, DateOnly Date, decimal Amount, int CashAccountId);
 
+public sealed record StockLookups(IReadOnlyList<InventoryReference> Warehouses, IReadOnlyList<InventoryReference> Units, InventoryAccounts? Accounts);
+
 public interface IStockDocumentService
 {
+    Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
     Task AddUnitAsync(int actor, int productId, int unitId, decimal factor, CancellationToken ct = default);
     Task<long> CreateBatchAsync(int actor, int branchId, int productId, int warehouseId, string code, DateOnly expiry, CancellationToken ct = default);

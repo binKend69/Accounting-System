@@ -26,6 +26,13 @@ public partial class MainWindow : Window
         inventoryLocations = []; UnitList.ItemsSource = null; WarehouseBox.ItemsSource = null;
         LocationList.ItemsSource = null; InventoryNameBox.Clear();
     }
+    private async void StockWindow_Click(object sender,RoutedEventArgs e) => await Run(async () =>
+    {
+        if (baseCurrencyId is not int currency) throw new InputException("اختر عملة الأساس أولاً.");
+        var window = new StockWindow(scopes, Actor, Branch, currency, Accounts.ToArray()) { Owner = this };
+        await window.LoadAsync(); window.ShowDialog();
+        StatusText.Text = "تم إغلاق مساحة المخزون.";
+    });
     private async Task LoadInventory()
     {
         var selected = WarehouseBox.SelectedValue;

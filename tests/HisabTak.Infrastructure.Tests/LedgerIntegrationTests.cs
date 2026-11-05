@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace HisabTak.Infrastructure.Tests;
 
 [Trait("Category", "SqlServer")]
-public sealed class LedgerIntegrationTests
+public sealed partial class LedgerIntegrationTests
 {
     private static readonly DateOnly Date = new(2026, 6, 1);
     private sealed record Fixture(int Owner, int Branch, int Currency, int OtherCurrency, int Group, int Debit, int Credit, int Period)

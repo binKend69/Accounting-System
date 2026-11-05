@@ -52,6 +52,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
+                <TabItem Header="المبيعات والمخزون"><StackPanel Margin="24" HorizontalAlignment="Right"><TextBlock Text="فواتير الفرع وحركة المخزون" FontSize="22"/><Button Content="فتح المبيعات والمشتريات والمخزون" Click="StockWindow_Click" Margin="0,12"/></StackPanel></TabItem>
                 <TabItem Header="الحسابات والإعداد المالي"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
                     <TextBlock Text="إنشاء حساب للفرع المحدد" FontSize="22" Margin="0,0,0,12"/>
                     <WrapPanel><TextBox x:Name="AccountCode" Width="160" ToolTip="رمز الحساب" AutomationProperties.Name="رمز الحساب"/><TextBox x:Name="AccountName" Width="260" ToolTip="اسم الحساب" AutomationProperties.Name="اسم الحساب"/></WrapPanel>

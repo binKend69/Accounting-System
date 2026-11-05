@@ -94,6 +94,17 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             await Audit(actor,"STOCK_ACCOUNTS_CONFIGURED","Branches",branchId,ct);
             return branchId;
         });
+    public async Task<StockLookups> LookupsAsync(int actor,int branchId,CancellationToken ct=default)
+    {
+        await authorization.DemandAsync(actor,PermissionCodes.JournalRead,ct);
+        await Branch(actor,branchId,ct);
+        var warehouses=await db.Warehouses.Where(x=>x.IsActive && x.BranchId==branchId).OrderBy(x=>x.NameAr)
+            .Select(x=>new InventoryReference(x.Id,x.NameAr,x.BranchId)).ToListAsync(ct);
+        var units=await db.Units.Where(x=>x.IsActive).OrderBy(x=>x.NameAr)
+            .Select(x=>new InventoryReference(x.Id,x.NameAr,null)).ToListAsync(ct);
+        var settings=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0)),ct,("@b",branchId))).SingleOrDefault();
+        return new(warehouses,units,settings);
+    }
     public async Task<IReadOnlyList<ProductInfo>> ProductsAsync(int actor,CancellationToken ct=default)
     {
         await authorization.DemandAsync(actor,PermissionCodes.JournalRead,ct);
