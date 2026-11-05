@@ -14,6 +14,16 @@ public sealed class StockCalculationTests
         Assert.Equal(0,result.Position.BookValue);
     }
     [Fact]
+    public void Last_purchase_price_does_not_choose_a_book_revaluation_policy()
+    {
+        var before=new StockPosition(10,200,20);
+        Assert.Throws<InvalidOperationException>(()=>StockCalculation.Receive(before,10,300,CostMethod.LastPurchase,2,true));
+        var carry=StockCalculation.Receive(before,10,300,CostMethod.LastPurchase,2,true,LastPurchaseBookPolicy.KeepAcquisitionValue);
+        var revalue=StockCalculation.Receive(before,10,300,CostMethod.LastPurchase,2,true,LastPurchaseBookPolicy.RevalueAtReceipt);
+        Assert.Equal(30,carry.Position.LastPurchasePrice);Assert.Equal(500,carry.Position.BookValue);Assert.Equal(0,carry.Revaluation);
+        Assert.Equal(30,revalue.Position.LastPurchasePrice);Assert.Equal(600,revalue.Position.BookValue);Assert.Equal(100,revalue.Revaluation);
+    }
+    [Fact]
     public void Unit_conversion_rejects_silent_quantity_rounding()
     {
         Assert.Equal(25,StockCalculation.Quantity(2.5m,10));

@@ -111,7 +111,7 @@ public sealed partial class StockDocumentService
         return (orig,owner,Part(Math.Abs(orig.Value),used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
     }
     private sealed record LineEffect(decimal Net,decimal Tax,decimal Cost,decimal Revaluation,long? Invoice);
-    private async Task<LineEffect> ApplyLine(int actor,StockDocument document,int index,int precision,int currencyPrecision,CancellationToken ct)
+    private async Task<LineEffect> ApplyLine(int actor,StockDocument document,int index,int precision,int currencyPrecision,LastPurchaseBookPolicy bookPolicy,CancellationToken ct)
     {
         var d=document.Draft; var l=d.Lines[index];
         if(!await db.Units.AnyAsync(x=>x.Id==l.UnitId && x.IsActive,ct)) throw new InvalidOperationException("Unit unavailable.");
@@ -138,7 +138,7 @@ public sealed partial class StockDocumentService
             if(item.Item2!=(batch!=null) || batch!=null && await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockBatches WHERE BatchId=@b AND ProductId=@p AND WarehouseId=@w",ct,("@b",batch),("@p",l.ProductId),("@w",d.WarehouseId))!=1)
                 throw new InvalidOperationException("Invalid incoming batch.");
             var purchase=d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Opening;
-            var change=StockCalculation.Receive(before,qty,originalCost??StockCalculation.Round(net*d.RateToBase,precision),item.Item1,precision,purchase);
+            var change=StockCalculation.Receive(before,qty,originalCost??StockCalculation.Round(net*d.RateToBase,precision),item.Item1,precision,purchase,bookPolicy);
             await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,batch,qty,change.Value,net,tax,l.OriginalMovementId,purchase?change.Position.LastPurchasePrice:null,ct);
             if(change.Revaluation!=0) await AddMovement(document.Id,index,l.ProductId,d.WarehouseId,null,0,change.Revaluation,0,0,null,null,ct);
             return new(net,tax,change.Value,change.Revaluation,originalInvoice);
@@ -191,7 +191,7 @@ public sealed partial class StockDocumentService
                     throw new InvalidOperationException("Counterparty cannot also be a mapped stock account.");
             }
             var effects=new List<LineEffect>();
-            for(var i=0;i<d.Lines.Count;i++) effects.Add(await ApplyLine(actor,doc,i,precision,currencyPrecision,ct));
+            for(var i=0;i<d.Lines.Count;i++) effects.Add(await ApplyLine(actor,doc,i,precision,currencyPrecision,a.BookPolicy,ct));
             var net=effects.Sum(e=>e.Net); var tax=effects.Sum(e=>e.Tax); var cost=effects.Sum(e=>e.Cost);
             var lines=new List<JournalLineDefinition>();
             void Debit(int account,decimal signed,bool inInvoiceCurrency=false)

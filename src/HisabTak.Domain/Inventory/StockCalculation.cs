@@ -1,5 +1,6 @@
 namespace HisabTak.Domain.Inventory;
 
+public enum LastPurchaseBookPolicy { Unspecified = 0, KeepAcquisitionValue = 1, RevalueAtReceipt = 2 }
 public enum CostMethod { WeightedAverage = 1, LastPurchase = 2 }
 public sealed record StockPosition(decimal Quantity, decimal BookValue, decimal LastPurchasePrice);
 public sealed record StockChange(StockPosition Position, decimal Value, decimal Revaluation);
@@ -18,14 +19,17 @@ public static class StockCalculation
             throw new ArgumentOutOfRangeException(nameof(value), "Value exceeds storage precision.");
     }
     public static decimal Round(decimal value, int precision) => decimal.Round(value, precision, MidpointRounding.AwayFromZero);
-    public static StockChange Receive(StockPosition before, decimal quantity, decimal value, CostMethod method, int precision, bool purchase)
+    public static StockChange Receive(StockPosition before, decimal quantity, decimal value, CostMethod method, int precision, bool purchase, LastPurchaseBookPolicy policy = LastPurchaseBookPolicy.Unspecified)
     {
         Validate(before, quantity, precision);
         if (value < 0 || !Enum.IsDefined(method)) throw new ArgumentOutOfRangeException(nameof(value));
         Exact(value, precision);
         var price = purchase ? Round(value / quantity, 8) : before.LastPurchasePrice;
         // Last-purchase valuation changes the remaining stock at receipt time, never past issues.
-        var revaluation = purchase && method == CostMethod.LastPurchase ? Round(before.Quantity * price, precision) - before.BookValue : 0m;
+        var difference = purchase && method == CostMethod.LastPurchase ? Round(before.Quantity * price, precision) - before.BookValue : 0m;
+        if (!Enum.IsDefined(policy) || difference != 0 && policy == LastPurchaseBookPolicy.Unspecified)
+            throw new InvalidOperationException("Select the last-purchase book valuation policy before posting a price change.");
+        var revaluation = policy == LastPurchaseBookPolicy.RevalueAtReceipt ? difference : 0m;
         var after = new StockPosition(checked(before.Quantity + quantity), checked(before.BookValue + value + revaluation), price);
         Exact(after.Quantity, 8); Exact(after.BookValue, precision);
         return new(after, value, revaluation);

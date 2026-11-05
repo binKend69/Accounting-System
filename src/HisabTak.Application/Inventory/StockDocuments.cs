@@ -13,7 +13,7 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
     int WarehouseId, int? TargetWarehouseId, int CurrencyId, decimal RateToBase, int CounterpartyAccountId,
     bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false);
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
-    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null);
+    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.Unspecified);
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
     long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId);
 public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Version, int State, long? Number,
@@ -30,6 +30,11 @@ public interface IStockDocumentService
     Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
     Task SetCurrencyPrecisionAsync(int actor, int currencyId, int precision, CancellationToken ct = default);
+    Task SetBarcodeAsync(int actor,int productId,int unitId,string barcode,CancellationToken ct=default);
+    Task<ProductUnitInfo?> ScanAsync(int actor,string barcode,CancellationToken ct=default);
+    Task SetPriceAsync(int actor,int productId,int unitId,int currencyId,string tier,decimal price,CancellationToken ct=default);
+    Task<decimal?> PriceAsync(int actor,int productId,int unitId,int currencyId,string tier,CancellationToken ct=default);
+    Task SetCreditLimitAsync(int actor, int branchId, int accountId, decimal limit, CancellationToken ct = default);
     Task ChangeCostMethodAsync(int actor, int productId, CostMethod method, CancellationToken ct = default);
     Task AddUnitAsync(int actor, int productId, int unitId, decimal factor, CancellationToken ct = default);
     Task<long> CreateBatchAsync(int actor, int branchId, int productId, int warehouseId, string code, DateOnly expiry, CancellationToken ct = default);

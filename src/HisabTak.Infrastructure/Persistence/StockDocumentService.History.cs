@@ -49,6 +49,7 @@ public sealed partial class StockDocumentService
             if(d.Kind==StockDocumentKind.Sale)
             {
                 var limit=await db.Accounts.Where(x=>x.Id==d.CounterpartyAccountId).Select(x=>x.CreditLimit).SingleAsync(ct);
+                if(limit is null)throw new InvalidOperationException("Set a customer credit limit before posting a credit sale.");
                 if(limit is decimal max)
                 {
                     // The current invoice has already posted within this transaction. Include existing journal and opening balances.
@@ -78,11 +79,11 @@ public sealed partial class StockDocumentService
         {
             var invoice=await Read(payment.InvoiceId,ct); var d=invoice.Draft;
             await Branch(actor,d.BranchId,ct);
-            var payload=JsonSerializer.Serialize(payment);
+            var payload=StockPayload.Encode(payment);
             var existing=await Rows("SELECT JournalId,Payload FROM dbo.StockDebtAllocations WHERE SourceKey=@k",r=>(r.GetInt64(0),r.GetString(1)),ct,("@k",payment.SourceKey));
             if(existing.Count>0)
             {
-                if(existing[0].Item2!=payload) throw new InvalidOperationException("Payment source reused with different content.");
+                if(StockPayload.Encode(JsonSerializer.Deserialize<DebtPayment>(existing[0].Item2))!=payload) throw new InvalidOperationException("Payment source reused with different content.");
                 return existing[0].Item1;
             }
             await FreeSource(payment.SourceKey,ct);

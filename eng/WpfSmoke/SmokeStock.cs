@@ -7,6 +7,11 @@ internal sealed class SmokeStock : IStockDocumentService
     public Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default) => Task.FromResult(new StockLookups([new(1,"المستودع",1)],[new(1,"حبة",null)],null));
     public Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SetCurrencyPrecisionAsync(int actor,int currencyId,int precision,CancellationToken ct=default) => throw new NotSupportedException();
+    public Task SetBarcodeAsync(int actor,int productId,int unitId,string barcode,CancellationToken ct=default) => throw new NotSupportedException();
+    public Task<ProductUnitInfo?> ScanAsync(int actor,string barcode,CancellationToken ct=default) => throw new NotSupportedException();
+    public Task SetPriceAsync(int actor,int productId,int unitId,int currencyId,string tier,decimal price,CancellationToken ct=default) => throw new NotSupportedException();
+    public Task<decimal?> PriceAsync(int actor,int productId,int unitId,int currencyId,string tier,CancellationToken ct=default) => throw new NotSupportedException();
+    public Task SetCreditLimitAsync(int actor,int branchId,int accountId,decimal limit,CancellationToken ct=default) => throw new NotSupportedException();
     public Task ChangeCostMethodAsync(int actor,int productId,CostMethod method,CancellationToken ct=default) => throw new NotSupportedException();
     public Task AddUnitAsync(int actor, int productId, int unitId, decimal factor, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<long> CreateBatchAsync(int actor, int branchId, int productId, int warehouseId, string code, DateOnly expiry, CancellationToken ct = default) => throw new NotSupportedException();

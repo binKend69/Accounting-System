@@ -52,10 +52,16 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         {
             if (!Enum.IsDefined(product.CostMethod) || !await db.Units.AnyAsync(x => x.Id == product.BaseUnitId && x.IsActive, ct))
                 throw new ArgumentException("Invalid base unit or cost method.");
+            var code=product.Code;
+            if(string.IsNullOrWhiteSpace(code))
+            {
+                do {code="IT-"+(await sql.ScalarAsync("SELECT NEXT VALUE FOR dbo.StockItemCodes",ct)).ToString("D8",System.Globalization.CultureInfo.InvariantCulture);}
+                while(await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockProducts WHERE Code=@c",ct,("@c",code))!=0);
+            }
             var id = checked((int)await sql.ScalarAsync("""
                 INSERT dbo.StockProducts(Code,Name,BaseUnitId,CostMethod,TrackBatches) VALUES(@code,@name,@unit,@method,@track);
                 SELECT CAST(SCOPE_IDENTITY() AS int);
-                """, ct, ("@code",Name(product.Code,40)),("@name",Name(product.Name,200)),("@unit",product.BaseUnitId),("@method",(int)product.CostMethod),("@track",product.TrackBatches)));
+                """, ct, ("@code",Name(code,40)),("@name",Name(product.Name,200)),("@unit",product.BaseUnitId),("@method",(int)product.CostMethod),("@track",product.TrackBatches)));
             await sql.ExecuteAsync("INSERT dbo.StockProductUnits VALUES(@id,@unit,1)",ct,("@id",id),("@unit",product.BaseUnitId));
             await Audit(actor,"PRODUCT_CREATED","StockProducts",id,ct);
             return id;
@@ -82,6 +88,17 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             if(existing==null)db.CustomSettings.Add(new Domain.Setup.CustomSetting(key,precision.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             await Audit(actor,"STOCK_CURRENCY_PRECISION","Currencies",currencyId,ct);
             return currencyId;
+        });
+    public Task SetCreditLimitAsync(int actor,int branchId,int accountId,decimal limit,CancellationToken ct=default) =>
+        Write(actor,PermissionCodes.AccountManage,ct,async () =>
+        {
+            await Branch(actor,branchId,ct);
+            if(limit<0 || limit>=10000000000000000m || decimal.Round(limit,2)!=limit)throw new ArgumentOutOfRangeException(nameof(limit));
+            var account=await db.Accounts.SingleAsync(x=>x.Id==accountId,ct);
+            await DemandClass(accountId,branchId,account.CurrencyId,["CUSTOMER"],ct);
+            await sql.ExecuteAsync("UPDATE dbo.Accounts SET CreditLimit=@limit,ModifiedAt=SYSUTCDATETIME() WHERE AccountId=@a",ct,("@a",accountId),("@limit",limit));
+            await Audit(actor,"CUSTOMER_LIMIT_SET","Accounts",accountId,ct);
+            return accountId;
         });
     public Task ChangeCostMethodAsync(int actor,int productId,CostMethod method,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.SetupManage,ct,async () =>
@@ -118,6 +135,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         Write(actor,PermissionCodes.SetupManage,ct,async () =>
         {
             await Branch(actor,branchId,ct);
+            if(!Enum.IsDefined(accounts.BookPolicy))throw new ArgumentException("Invalid valuation policy.");
             int[] ids = [accounts.StockAccountId,accounts.SalesAccountId,accounts.CostAccountId,accounts.AdjustmentAccountId,accounts.InputTaxAccountId,accounts.OutputTaxAccountId];
             if(accounts.FxGainAccountId.HasValue!=accounts.FxLossAccountId.HasValue) throw new ArgumentException("Configure both FX accounts.");
             if(accounts.FxGainAccountId is int gain && accounts.FxLossAccountId is int loss) ids=[..ids,gain,loss];
@@ -127,8 +145,9 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             if(await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockDocuments WHERE BranchId=@b AND State>=2",ct,("@b",branchId))>0)
             {
                 var previous=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0))!,ct,("@b",branchId))).Single();
-                if((previous with { FxGainAccountId=null,FxLossAccountId=null })!=(accounts with { FxGainAccountId=null,FxLossAccountId=null }) ||
-                    previous.FxGainAccountId!=null && previous!=accounts)
+                if((previous with { FxGainAccountId=null,FxLossAccountId=null,BookPolicy=LastPurchaseBookPolicy.Unspecified })!=(accounts with { FxGainAccountId=null,FxLossAccountId=null,BookPolicy=LastPurchaseBookPolicy.Unspecified }) ||
+                    previous.FxGainAccountId!=null && (previous.FxGainAccountId!=accounts.FxGainAccountId || previous.FxLossAccountId!=accounts.FxLossAccountId) ||
+                    previous.BookPolicy!=LastPurchaseBookPolicy.Unspecified && previous.BookPolicy!=accounts.BookPolicy)
                     throw new InvalidOperationException("Stock account mappings are fixed after first posting.");
             }
             await sql.ExecuteAsync("UPDATE dbo.StockAccountSettings SET Payload=@a WHERE BranchId=@b; IF @@ROWCOUNT=0 INSERT dbo.StockAccountSettings VALUES(@b,@a)",ct,("@b",branchId),("@a",JsonSerializer.Serialize(accounts)));
@@ -193,6 +212,30 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             StockCalculation.Exact(l.Quantity,8); StockCalculation.Exact(l.UnitPrice,8); StockCalculation.Exact(l.Discount,8);
         }
     }
+    private async Task<StockDocumentDraft> ReturnHeader(int actor,StockDocumentDraft draft,CancellationToken ct)
+    {
+        if(!IsReturn(draft.Kind))return draft;
+        await Branch(actor,draft.BranchId,ct);
+        StockDocumentDraft? original=null;
+        var expected=draft.Kind==StockDocumentKind.SalesReturn?StockDocumentKind.Sale:StockDocumentKind.Purchase;
+        foreach(var movement in draft.Lines.Select(x=>x.OriginalMovementId).Distinct())
+        {
+            var id=await sql.ScalarAsync("""
+                SELECT h.DocumentId FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId
+                WHERE m.MovementId=@m AND m.Quantity<>0 AND h.State=2 AND h.BranchId=@b AND h.Kind=@kind AND h.EntryDate<=@date
+                """,ct,("@m",movement),("@b",draft.BranchId),("@kind",(int)expected),("@date",draft.Date));
+            if(id==0)throw new InvalidOperationException("Return needs an original posted movement in this branch.");
+            var invoice=(await Read(id,ct)).Draft;
+            if(original!=null && (original.CurrencyId!=invoice.CurrencyId || original.RateToBase!=invoice.RateToBase || original.TaxRate!=invoice.TaxRate ||
+                original.TaxEnabled!=invoice.TaxEnabled || original.PricesIncludeTax!=invoice.PricesIncludeTax || original.Credit!=invoice.Credit ||
+                original.WarehouseId!=invoice.WarehouseId || original.CounterpartyAccountId!=invoice.CounterpartyAccountId))
+                throw new InvalidOperationException("Return lines require compatible original invoices.");
+            original=invoice;
+        }
+        if(original==null)throw new ArgumentException("Return requires at least one original movement.");
+        return draft with { CurrencyId=original.CurrencyId,RateToBase=original.RateToBase,TaxRate=original.TaxRate,TaxEnabled=original.TaxEnabled,
+            PricesIncludeTax=original.PricesIncludeTax,Credit=original.Credit,WarehouseId=original.WarehouseId,CounterpartyAccountId=original.CounterpartyAccountId };
+    }
     private async Task FreeSource(Guid key,CancellationToken ct)
     {
         if(key==Guid.Empty || await sql.ScalarAsync("""
@@ -203,13 +246,14 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
     public Task<StockDocument> SaveAsync(int actor,StockDocumentDraft draft,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,async () =>
         {
+            draft=await ReturnHeader(actor,draft,ct);
             await Validate(actor,draft,ct);
-            var payload=JsonSerializer.Serialize(draft);
+            var payload=StockPayload.Encode(draft);
             var id=await sql.ScalarAsync("SELECT DocumentId FROM dbo.StockDocuments WHERE SourceKey=@k",ct,("@k",draft.SourceKey));
             if(id!=0)
             {
                 var existing=await Read(id,ct);
-                if(JsonSerializer.Serialize(existing.Draft)!=payload) throw new InvalidOperationException("Source key reused with different content.");
+                if(StockPayload.Encode(existing.Draft)!=payload) throw new InvalidOperationException("Source key reused with different content.");
                 return existing;
             }
             await FreeSource(draft.SourceKey,ct);
@@ -221,12 +265,13 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
     public Task<StockDocument> UpdateAsync(int actor,long id,int version,StockDocumentDraft draft,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,async () =>
         {
+            draft=await ReturnHeader(actor,draft,ct);
             await Validate(actor,draft,ct);
             var old=await Read(id,ct);
             if(old.State!=1 || old.Draft.BranchId!=draft.BranchId || old.Draft.SourceKey!=draft.SourceKey || old.Draft.Kind!=draft.Kind)
                 throw new InvalidOperationException("Document identity or posted history cannot change.");
-            var payload=JsonSerializer.Serialize(draft);
-            if(old.Version==version+1 && JsonSerializer.Serialize(old.Draft)==payload) return old;
+            var payload=StockPayload.Encode(draft);
+            if(old.Version==version+1 && StockPayload.Encode(old.Draft)==payload) return old;
             if(old.Version!=version) throw new DocumentConflictException();
             await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET EntryDate=@d,Payload=@p,Version=Version+1 WHERE DocumentId=@i",ct,("@i",id),("@d",draft.Date),("@p",payload));
             await Audit(actor,"STOCK_DRAFT_UPDATED","StockDocuments",id,ct);

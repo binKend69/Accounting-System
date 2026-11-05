@@ -18,8 +18,9 @@ public sealed partial class LedgerIntegrationTests
             return await With<IChartOfAccountsService,int>(test,s=>s.CreateClassifiedAccountAsync(f.Owner,f.Branch,"0091"+n,"Test "+n,f.Group,f.Currency,1,group));
         }
         int cash=await Account(1,"CASH"),customer=await Account(2,"CUSTOMER"),supplier=await Account(3,"SUPPLIER");
-        var settings=new InventoryAccounts(f.Debit,f.Credit,await Account(4),await Account(5),await Account(6),await Account(7));
+        var settings=new InventoryAccounts(f.Debit,f.Credit,await Account(4),await Account(5),await Account(6),await Account(7),BookPolicy:LastPurchaseBookPolicy.RevalueAtReceipt);
         await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(f.Owner,f.Branch,settings));
+        await Change<IStockDocumentService>(test,x=>x.SetCreditLimitAsync(f.Owner,f.Branch,customer,100000));
         Task<int> Warehouse(string name)=>With<IInventorySetupService,int>(test,s=>s.CreateAsync(f.Owner,f.Branch,InventoryReferenceKind.Warehouse,name));
         var w=await Warehouse("Store A"); var target=await Warehouse("Store B");
         var product=await With<IStockDocumentService,int>(test,s=>s.CreateProductAsync(f.Owner,new("001","Item",unit,method,tracked)));
@@ -37,6 +38,38 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<StockBalance>>(test,service=>service.BalancesAsync(s.F.Owner,s.F.Branch,date));
     private static Task<IReadOnlyList<DebtBalance>> Debts(SqlTestDatabase test,Store s)=>
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
+
+    [SqlServerFact]
+    public async Task Unit_barcode_resolves_box_and_price_is_scoped_to_currency_and_tier()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);
+        await Change<IStockDocumentService>(test,x=>x.SetBarcodeAsync(s.F.Owner,s.Product,s.Box,"0000123"));
+        var match=await With<IStockDocumentService,ProductUnitInfo?>(test,x=>x.ScanAsync(s.F.Owner,"0000123"));
+        Assert.NotNull(match);Assert.Equal(s.Box,match.UnitId);Assert.Equal(10,match.Factor);
+        await Change<IStockDocumentService>(test,x=>x.SetPriceAsync(s.F.Owner,s.Product,s.Box,s.F.Currency,"retail",1250));
+        Task<decimal?> Price(int unit,int currency,string tier)=>With<IStockDocumentService,decimal?>(test,x=>x.PriceAsync(s.F.Owner,s.Product,unit,currency,tier));
+        Assert.Equal(1250,await Price(s.Box,s.F.Currency,"retail"));Assert.Null(await Price(s.Unit,s.F.Currency,"retail"));
+        Assert.Null(await Price(s.Box,s.F.OtherCurrency,"retail"));Assert.Null(await Price(s.Box,s.F.Currency,"wholesale"));
+        var ids=await Task.WhenAll(Enumerable.Range(0,2).Select(i=>With<IStockDocumentService,int>(test,x=>x.CreateProductAsync(s.F.Owner,new("","Auto "+i,s.Unit,CostMethod.WeightedAverage,false)))));
+        var all=await With<IStockDocumentService,IReadOnlyList<ProductInfo>>(test,x=>x.ProductsAsync(s.F.Owner));
+        Assert.Equal(2,all.Where(x=>ids.Contains(x.Id)).Select(x=>x.Code).Distinct().Count());
+    }
+    [SqlServerFact]
+    public async Task Concurrent_sales_cannot_spend_the_same_stock_and_exceeded_limit_leaves_no_effect()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);
+        await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,5,20)));
+        await Change<IStockDocumentService>(test,x=>x.SetCreditLimitAsync(s.F.Owner,s.F.Branch,s.Customer,30));
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>Trade(test,s,Draft(s,StockDocumentKind.Sale,s.Customer,new StockLine(s.Product,s.Unit,4,30))));
+        Assert.Empty(await Debts(test,s));
+        async Task<bool> Sell()
+        {
+            try {await Trade(test,s,Draft(s,StockDocumentKind.Sale,s.Cash,new StockLine(s.Product,s.Unit,4,30)));return true;}
+            catch(InvalidOperationException){return false;}
+        }
+        var succeeded=await Task.WhenAll(Sell(),Sell());Assert.Single(succeeded,x=>x);
+        var stock=Assert.Single(await Stock(test,s,Date));Assert.Equal(1,stock.Quantity);Assert.Equal(20,stock.BookValue);
+    }
 
     [SqlServerFact]
     public async Task Stock_purchase_sale_partial_return_and_settlement_reconcile()
@@ -73,6 +106,7 @@ public sealed partial class LedgerIntegrationTests
         var customerGroup=(await database.AccountGeneralGroups.SingleAsync(x=>x.SystemCode=="CUSTOMER")).Id;
         var foreignCustomer=await With<IChartOfAccountsService,int>(test,x=>x.CreateClassifiedAccountAsync(f.Owner,f.Branch,"009280","SAR customer",f.Group,f.OtherCurrency,1,customerGroup));
         Task<int> Account(string code)=>With<IChartOfAccountsService,int>(test,x=>x.CreateAccountAsync(f.Owner,code,code,f.Group,f.Currency,1,f.Branch));
+        await Change<IStockDocumentService>(test,x=>x.SetCreditLimitAsync(f.Owner,f.Branch,foreignCustomer,1000));
         var gain=await Account("009281");var loss=await Account("009282");
         var settings=(await With<IStockDocumentService,StockLookups>(test,x=>x.LookupsAsync(f.Owner,f.Branch))).Accounts!;
         await Change<IStockDocumentService>(test,x=>x.ConfigureAsync(f.Owner,f.Branch,settings with { FxGainAccountId=gain,FxLossAccountId=loss }));
@@ -105,6 +139,7 @@ public sealed partial class LedgerIntegrationTests
         await With<IStockDocumentService,long>(test,x=>x.SettleAsync(s.F.Owner,new(Guid.NewGuid(),sale.Id,Date,220,s.Cash)));
         var returned=await Trade(test,s,Draft(s,StockDocumentKind.SalesReturn,s.Customer,new StockLine(s.Product,s.Unit,1,OriginalMovementId:sale.Movements[0].Id)));
         var refund=(await Debts(test,s)).Single(x=>x.DocumentId==returned.Id);
+        Assert.True(returned.Draft.TaxEnabled); Assert.Equal(0.1m,returned.Draft.TaxRate);
         Assert.False(refund.Receivable); Assert.Equal(110,refund.RemainingAmount);
         var journal=await With<IStockDocumentService,long>(test,x=>x.SettleAsync(s.F.Owner,new(Guid.NewGuid(),returned.Id,Date,110,s.Cash)));
         Assert.Equal(0,(await Debts(test,s)).Single(x=>x.DocumentId==returned.Id).RemainingAmount);
