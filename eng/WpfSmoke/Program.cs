@@ -21,6 +21,7 @@ internal static class Program
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         if(args.Contains("--sql"))
         {
+            SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
             var task=SqlUiSmoke.Run();
             var frame=new System.Windows.Threading.DispatcherFrame();
             var timer=new System.Windows.Threading.DispatcherTimer {Interval=TimeSpan.FromMilliseconds(20)};

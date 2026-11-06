@@ -31,6 +31,7 @@ jobs:
         if: runner.os == 'Windows'
         run: dotnet run --project eng/WpfSmoke/WpfSmoke.csproj --configuration Release
       - name: Prepare Windows SQL for real UI acceptance
+        timeout-minutes: 12
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./eng/start-windows-sql.ps1

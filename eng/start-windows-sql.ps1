@@ -37,8 +37,13 @@ $cert = New-SelfSignedCertificate -Subject "CN=$env:COMPUTERNAME" -DnsName $env:
 $public = Join-Path $env:RUNNER_TEMP 'hisabtak-sql-test.cer'
 Export-Certificate -Cert $cert -FilePath $public | Out-Null
 Import-Certificate -FilePath $public -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
-$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-$keyPath = Join-Path $env:ProgramData ('Microsoft\Crypto\RSA\MachineKeys\' + $rsa.CspKeyContainerInfo.UniqueKeyContainerName)
+# X509Certificate2.PrivateKey exposes the legacy CSP container required by SQL Server.
+# GetRSAPrivateKey may return a wrapper without CspKeyContainerInfo; never apply an ACL to the parent directory.
+$privateKey = $cert.PrivateKey
+$container = $privateKey.CspKeyContainerInfo.UniqueKeyContainerName
+if ([string]::IsNullOrWhiteSpace($container)) { throw 'The test certificate has no legacy CSP container.' }
+$keyPath = Join-Path $env:ProgramData ('Microsoft\Crypto\RSA\MachineKeys\' + $container)
+if (!(Test-Path $keyPath -PathType Leaf)) { throw 'Certificate private-key file was not found.' }
 $acl = Get-Acl $keyPath
 $identity = $service.StartName
 if ($identity -eq 'LocalSystem') { $identity = 'NT AUTHORITY\SYSTEM' }
