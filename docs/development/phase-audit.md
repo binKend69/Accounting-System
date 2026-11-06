@@ -4,6 +4,8 @@
 
 ## الدليل
 
+نجح التحقق للكود `0425236e0ce9a779538c0470297b816e0568f008` في [تشغيل42208217062](https://github.com/binKend69/Accounting-System/actions/runs/42208217062): بناء Windows/Linux بصفر أخطاء وصفر تحذيرات؛123 اختباراً عاماً على كل منصة، و73 SQL ناجحة دون تجاوز في مهمتها المستقلة. نجح فحص WPF المعتاد، ونجحت دورة WPF جديدة بخدمات الإنتاج وقاعدة SQL فعلية مستقلة واتصال مشفر متحقق الشهادة. تستبدل الدورة إجابات نوافذ التأكيد فقط؛ ليست تجربة يدوية لكل الشاشات أو طابعة العميل.
+
 - [المتطلبات](../requirements/requirements.md)، [سيناريوهات القبول وخطة المراحل](../requirements/acceptance.md)، [القرارات ومنها U17](../requirements/decisions.md).
 - [عقود المخزون والمستندات](../../src/HisabTak.Application/Inventory/StockDocuments.cs)، [الترحيل](../../src/HisabTak.Infrastructure/Persistence/StockDocumentService.Posting.cs)، [الذمم والعكس](../../src/HisabTak.Infrastructure/Persistence/StockDocumentService.History.cs)، [حساب التكلفة](../../src/HisabTak.Domain/Inventory/StockCalculation.cs).
 - [اختبارات SQL التجارية](../../tests/HisabTak.Infrastructure.Tests/StockDocumentIntegrationTests.cs)، [الدفتر والمستندات](../../tests/HisabTak.Infrastructure.Tests/LedgerIntegrationTests.cs)، [القاعدة والأمن والاستعادة](../../tests/HisabTak.Infrastructure.Tests/SqlServerIntegrationTests.cs).
@@ -69,6 +71,6 @@
 
 ## تحديث تنفيذ بوابة التكلفة والتجارة
 
-[تفاصيل الحزمة الحالية واختبارات القبول وحدودها](trade-history-acceptance.md): فصل حساب مردودات المبيعات، وتاريخ شراء وبيع تفصيلي مؤرخ مع فلاتر وصفحات وروابط الأصل، ومصفوفة SQL للسعر الصاعد والهابط والطريقتين والصرف الجزئي والكامل والكسور والمردود والعكس. فحص Windows المتصل بـSQL أضيف بوصفه بوابة تحقق، وتثبت نتيجته في تقرير الحالة بعد التنفيذ.
+[تفاصيل الحزمة الحالية واختبارات القبول وحدودها](trade-history-acceptance.md): فصل حساب مردودات المبيعات، وتاريخ شراء وبيع تفصيلي مؤرخ مع فلاتر وصفحات وروابط الأصل، ومصفوفة SQL للسعر الصاعد والهابط والطريقتين والصرف الجزئي والكامل والكسور والمردود والعكس. فحص Windows المتصل بـSQL نجح في تشغيل42208217062، وأغلقت البنود الأربعة المحددة للحزمة.
 
 المتبقي الأوسع في المصفوفة لا يختفي بإغلاق هذه البنود: الإحصاءات والجرد الفعلي وتحويل الفروع وإقفال الصناديق وكل واجهات الصلاحيات ثم POS والتقارير والمخرجات. المرحلة التالية المنطقية هي استكمال P08 مع الحفاظ على خدمات P06/P07 المختبرة؛ لا نعلن جميع معايير P06/P07 أو النظام كله مغلقة.
