@@ -1,0 +1,224 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.PosView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:pages="clr-namespace:MotoParts.Desktop.Views.Pages"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <Grid Margin="20,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="370" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ================= Cart ================= -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- No till: the guardrail, shown before anyone wastes time on a cart. -->
+            <Border Background="{StaticResource WarningSoft}" CornerRadius="6" Padding="14,10" Margin="0,0,0,12"
+                    Visibility="{Binding HasOpenTill, Converter={StaticResource Visible}, ConverterParameter=invert}">
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Warning}" FontWeight="SemiBold"
+                           Text="لا توجد وردية مفتوحة باسمك؛ لا يمكن البيع قبل فتح وردية من شاشة «ورديتي والحضور»." />
+            </Border>
+
+            <!-- Scanner box -->
+            <Border Grid.Row="1" Style="{StaticResource Card}" Padding="12">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="إضافة" Style="{StaticResource PrimaryButton}" Command="{Binding AddByCodeCommand}" MinWidth="90" Margin="8,0,0,0" />
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xEA4A;" FontSize="22" Margin="0,0,10,0" Foreground="{StaticResource TextMuted}" />
+                    <TextBox x:Name="Scanner" Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" FontSize="18" MinHeight="44"
+                             ToolTip="امسح الباركود أو اكتب رمز الصنف أو جزءاً من اسمه أو الموديل ثم اضغط Enter" />
+                </DockPanel>
+            </Border>
+
+            <!-- Search results -->
+            <Border Grid.Row="2" Style="{StaticResource Card}" Padding="6" Margin="0,8,0,0"
+                    Visibility="{Binding HasSearchResults, Converter={StaticResource Visible}}">
+                <StackPanel>
+                    <DockPanel Margin="6,2,6,6">
+                        <Button DockPanel.Dock="Right" Content="إغلاق (Esc)" Style="{StaticResource LinkButton}" Command="{Binding ClearSearchCommand}" />
+                        <TextBlock Text="اختر الصنف (الأسهم ثم Enter، أو نقرتان)" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+                    </DockPanel>
+                    <DataGrid x:Name="Results" ItemsSource="{Binding SearchResults}" SelectedItem="{Binding SelectedResult}" MaxHeight="260"
+                              MouseDoubleClick="OnResultDoubleClick" PreviewKeyDown="OnResultsKeyDown">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="الرمز" Binding="{Binding Sku}" Width="110" />
+                            <DataGridTextColumn Header="الصنف" Binding="{Binding Name}" Width="*" />
+                            <DataGridTextColumn Header="التوافق" Binding="{Binding FitsModels}" Width="*" />
+                            <DataGridTextColumn Header="المتوفر" Binding="{Binding StockQty, Converter={StaticResource Qty}}" Width="80" ElementStyle="{StaticResource AmountCell}" />
+                            <DataGridTextColumn Header="السعر" Binding="{Binding SellingPrice, Converter={StaticResource Money}}" Width="90" ElementStyle="{StaticResource AmountCellBold}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </Border>
+
+            <!-- Cart lines -->
+            <DataGrid x:Name="Cart" Grid.Row="3" Margin="0,10,0,0" ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}"
+                      IsReadOnly="False" RowHeight="40" PreviewKeyDown="OnCartKeyDown">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="الرمز" Binding="{Binding Sku}" IsReadOnly="True" Width="105" />
+                    <DataGridTemplateColumn Header="الصنف" Width="*" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type pages:PosLine}">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Warning}" Foreground="{StaticResource Danger}" FontSize="11.5"
+                                               Visibility="{Binding Warning, Converter={StaticResource VisibleIfAny}}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="الكمية" Binding="{Binding QuantityText, UpdateSourceTrigger=PropertyChanged}" Width="80" ElementStyle="{StaticResource AmountCell}" />
+                    <DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" IsReadOnly="True" Width="60" />
+                    <DataGridTextColumn Header="السعر" Binding="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}" Width="90" ElementStyle="{StaticResource AmountCell}" />
+                    <DataGridTextColumn Header="الخصم" Binding="{Binding DiscountText, UpdateSourceTrigger=PropertyChanged}" Width="80" ElementStyle="{StaticResource AmountCell}" />
+                    <DataGridTextColumn Header="الإجمالي" Binding="{Binding LineTotal, Converter={StaticResource Money}}" IsReadOnly="True" Width="100" ElementStyle="{StaticResource AmountCellBold}" />
+                    <DataGridTemplateColumn Width="44" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource LinkButton}" Padding="4" ToolTip="حذف السطر (Delete)"
+                                        Command="{Binding DataContext.RemoveLineCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" Foreground="{StaticResource Danger}" FontSize="14" />
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <TextBlock Grid.Row="3" Text="امسح باركود أو اكتب رمز صنف لبدء البيع" Style="{StaticResource Muted}" FontSize="16"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Visibility="{Binding IsCartEmpty, Converter={StaticResource Visible}}" IsHitTestVisible="False" />
+
+            <StackPanel Grid.Row="4" Margin="0,10,0,0">
+                <Border Background="{StaticResource WarningSoft}" CornerRadius="5" Padding="10,7" Margin="0,0,0,8"
+                        Visibility="{Binding Warnings, Converter={StaticResource VisibleIfAny}}">
+                    <TextBlock Text="{Binding Warnings}" Foreground="{StaticResource Warning}" TextWrapping="Wrap" />
+                </Border>
+                <controls:StatusBanner />
+                <TextBlock Style="{StaticResource Muted}" FontSize="12"
+                           Text="Enter إضافة   |   F4 المبلغ المدفوع   |   F12 إتمام البيع   |   Delete حذف سطر   |   Esc مسح البحث" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ================= Payment panel ================= -->
+        <Border Grid.Column="2" Style="{StaticResource Card}" Padding="18">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Bottom">
+                    <Button Content="إتمام البيع  (F12)" Style="{StaticResource SuccessButton}" MinHeight="54" FontSize="18"
+                            Command="{Binding CompleteSaleCommand}" IsEnabled="{Binding CanCompleteSale}" />
+                    <Button Content="تفريغ السلة" Margin="0,8,0,0" Command="{Binding ClearCartCommand}" />
+
+                    <!-- The sale just completed -->
+                    <Border Background="{StaticResource SuccessSoft}" CornerRadius="6" Padding="12" Margin="0,12,0,0"
+                            Visibility="{Binding LastSale, Converter={StaticResource VisibleIfAny}}">
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold">
+                                آخر فاتورة: <Run Text="{Binding LastSale.InvoiceNumber, Mode=OneWay}" />
+                            </TextBlock>
+                            <UniformGrid Columns="2" Margin="0,8,0,0">
+                                <Button Content="إيصال 80مم" Margin="0,0,4,0" Command="{Binding PrintReceiptCommand}" />
+                                <Button Content="فاتورة A4" Margin="4,0,0,0" Command="{Binding PrintA4Command}" />
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <!-- Totals -->
+                        <DockPanel Margin="0,2">
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding Subtotal, Converter={StaticResource Money}}" FlowDirection="LeftToRight" />
+                            <TextBlock Text="المجموع" Style="{StaticResource Muted}" />
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding DiscountTotal, Converter={StaticResource Money}}" FlowDirection="LeftToRight" />
+                            <TextBlock Text="الخصم" Style="{StaticResource Muted}" />
+                        </DockPanel>
+                        <DockPanel Margin="0,2">
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding TaxTotal, Converter={StaticResource Money}}" FlowDirection="LeftToRight" />
+                            <TextBlock Text="{Binding TaxLabel}" Style="{StaticResource Muted}" />
+                        </DockPanel>
+                        <Border Background="{StaticResource Sidebar}" CornerRadius="6" Padding="14,10" Margin="0,10,0,14">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Total, Converter={StaticResource Money}}" Foreground="White"
+                                           FontSize="30" FontWeight="Bold" FlowDirection="LeftToRight" />
+                                <TextBlock Text="الإجمالي" Foreground="{StaticResource SidebarText}" FontSize="16" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Payment method -->
+                        <TextBlock Text="طريقة الدفع" Style="{StaticResource FieldLabel}" />
+                        <ItemsControl ItemsSource="{Binding PaymentMethods}" Margin="0,0,0,12">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="4" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <RadioButton GroupName="PayMethod" Margin="2" Content="{Binding Converter={StaticResource Arabic}}"
+                                                 Command="{Binding DataContext.SetPaymentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                 CommandParameter="{Binding}">
+                                        <RadioButton.IsChecked>
+                                            <MultiBinding Mode="OneWay">
+                                                <MultiBinding.Converter>
+                                                    <pages:EqualityConverter />
+                                                </MultiBinding.Converter>
+                                                <Binding />
+                                                <Binding Path="DataContext.PaymentMethod" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
+                                            </MultiBinding>
+                                        </RadioButton.IsChecked>
+                                        <RadioButton.Template>
+                                            <ControlTemplate TargetType="RadioButton">
+                                                <Border x:Name="Chrome" CornerRadius="5" Padding="4,9" BorderThickness="1"
+                                                        BorderBrush="{StaticResource Border}" Background="{StaticResource Surface}">
+                                                    <ContentPresenter HorizontalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter TargetName="Chrome" Property="Background" Value="{StaticResource Primary}" />
+                                                        <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Primary}" />
+                                                        <Setter Property="Foreground" Value="White" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </RadioButton.Template>
+                                    </RadioButton>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Cash -->
+                        <StackPanel Visibility="{Binding IsCash, Converter={StaticResource Visible}}">
+                            <TextBlock Text="المبلغ المدفوع (F4) — اتركه فارغاً إذا دفع المبلغ تماماً" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="Tendered" Text="{Binding TenderedText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberBox}" FontSize="18" />
+                            <TextBlock Text="{Binding Change}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource Primary}" Margin="0,6,0,0"
+                                       Visibility="{Binding Change, Converter={StaticResource VisibleIfAny}}" />
+                        </StackPanel>
+
+                        <!-- Customer -->
+                        <TextBlock Margin="0,12,0,4" Style="{StaticResource FieldLabel}">
+                            <Run Text="العميل" /><Run Text=" (مطلوب للبيع الآجل)" Foreground="{StaticResource Danger}" />
+                        </TextBlock>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource LinkButton}" Content="بدون" Click="OnClearCustomer" />
+                            <ComboBox ItemsSource="{Binding Customers}" SelectedItem="{Binding Customer}" DisplayMemberPath="Name"
+                                      IsEditable="True" IsTextSearchEnabled="True" />
+                        </DockPanel>
+
+                        <TextBlock Text="ملاحظة على الفاتورة (اختياري)" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
+                        <TextBox Text="{Binding Notes}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,8 +1,8 @@
 <Project>
-  <PropertyGroup>
+  <PropertyGroup Condition="!$([System.String]::Copy('$(MSBuildProjectName)').StartsWith('MotoParts'))">
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-  <ItemGroup>
+  <ItemGroup Condition="!$([System.String]::Copy('$(MSBuildProjectName)').StartsWith('MotoParts'))">
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />

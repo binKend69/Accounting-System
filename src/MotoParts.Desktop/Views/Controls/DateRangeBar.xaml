@@ -1,0 +1,14 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Controls.DateRangeBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- From / To / quick ranges, bound to a ListPageViewModel. -->
+    <StackPanel Orientation="Horizontal">
+        <TextBlock Text="من" VerticalAlignment="Center" Margin="0,0,6,0" Style="{StaticResource Muted}" />
+        <DatePicker SelectedDate="{Binding From}" Width="130" />
+        <TextBlock Text="إلى" VerticalAlignment="Center" Margin="10,0,6,0" Style="{StaticResource Muted}" />
+        <DatePicker SelectedDate="{Binding To}" Width="130" />
+        <Button Content="عرض" Margin="8,0,0,0" Command="{Binding RefreshCommand}" />
+        <Button Content="اليوم" Style="{StaticResource LinkButton}" Margin="4,0,0,0" Command="{Binding TodayCommand}" />
+        <Button Content="هذا الشهر" Style="{StaticResource LinkButton}" Command="{Binding ThisMonthCommand}" />
+    </StackPanel>
+</UserControl>

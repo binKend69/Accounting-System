@@ -1,0 +1,32 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.RefundsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <DockPanel Margin="24,16">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <controls:DateRangeBar Margin="0,0,16,6" />
+            <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="240" Margin="0,0,10,6"
+                     ToolTip="رقم الإشعار أو الفاتورة أو السبب" />
+        </WrapPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal">
+                <Button Content="طباعة إشعار المرتجع" Command="{Binding PrintCommand}" />
+                <TextBlock Text="الاسترجاع يتم من شاشة الفواتير بتحديد الفاتورة ثم «استرجاع»." Style="{StaticResource Muted}"
+                           VerticalAlignment="Center" Margin="14,0,0,0" />
+            </StackPanel>
+        </DockPanel>
+        <controls:StatusBanner DockPanel.Dock="Top" />
+        <DataGrid ItemsSource="{Binding Refunds}" SelectedItem="{Binding Selected}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="رقم الإشعار" Binding="{Binding RefundNumber}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="التاريخ" Binding="{Binding RefundDate, Converter={StaticResource Date}}" Width="100" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الفاتورة الأصلية" Binding="{Binding InvoiceNumber}" Width="140" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="السبب" Binding="{Binding Reason}" Width="*" />
+                <DataGridTextColumn Header="الموظف" Binding="{Binding UserName}" Width="140" />
+                <DataGridTextColumn Header="الطريقة" Binding="{Binding PaymentMethod, Converter={StaticResource Arabic}}" Width="100" />
+                <DataGridTextColumn Header="المبلغ" Binding="{Binding Total, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

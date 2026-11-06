@@ -1,0 +1,19 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:infra="clr-namespace:MotoParts.Desktop.Infrastructure">
+    <!-- Value converters shared by every view. Template dictionaries merge this
+         (and Theme.xaml) themselves: a StaticResource inside a merged dictionary
+         cannot see resources declared in App.xaml. -->
+    <infra:MoneyConverter x:Key="Money" />
+    <infra:QuantityConverter x:Key="Qty" />
+    <infra:DateConverter x:Key="Date" />
+    <infra:ArabicEnumConverter x:Key="Arabic" />
+    <infra:MoneySignBrushConverter x:Key="SignBrush" />
+    <infra:BoolToVisibilityConverter x:Key="Visible" />
+    <infra:NullToVisibilityConverter x:Key="VisibleIfAny" />
+    <infra:YesNoConverter x:Key="YesNo" />
+    <infra:StatusBrushConverter x:Key="StatusBrush" />
+    <infra:InvertBoolConverter x:Key="InvertBool" />
+    <infra:AllTrueVisibilityConverter x:Key="AllTrueVisible" />
+    <infra:AuditTypeConverter x:Key="AuditType" />
+</ResourceDictionary>

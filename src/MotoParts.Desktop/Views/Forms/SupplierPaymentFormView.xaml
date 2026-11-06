@@ -1,0 +1,25 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Forms.SupplierPaymentFormView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:forms="clr-namespace:MotoParts.Desktop.Views.Forms">
+    <StackPanel>
+        <TextBlock Text="المورد (من لهم مستحقات) *" Style="{StaticResource FieldLabel}" />
+        <ComboBox ItemsSource="{Binding Suppliers}" SelectedItem="{Binding Supplier}" Margin="0,0,0,4">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding Balance, Converter={StaticResource Money}}" FlowDirection="LeftToRight"
+                                   Foreground="{StaticResource TextMuted}" Margin="16,0,0,0" />
+                        <TextBlock Text="{Binding Name}" />
+                    </DockPanel>
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Margin="0,0,0,12" Style="{StaticResource Muted}" Visibility="{Binding Supplier, Converter={StaticResource VisibleIfAny}}">
+            المستحق للمورد: <Run Text="{Binding Supplier.Balance, Converter={StaticResource Money}, Mode=OneWay}" FontWeight="SemiBold" />
+        </TextBlock>
+        <forms:VoucherFields />
+        <TextBlock Text="ملاحظات" Style="{StaticResource FieldLabel}" Margin="0,10,0,4" />
+        <TextBox Text="{Binding Notes}" />
+    </StackPanel>
+</UserControl>

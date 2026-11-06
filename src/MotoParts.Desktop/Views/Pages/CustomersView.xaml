@@ -1,0 +1,48 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.CustomersView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <DockPanel Margin="24,16">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+            <WrapPanel>
+                <Button Content="عميل جديد" Style="{StaticResource PrimaryButton}" Command="{Binding AddCommand}" Margin="0,0,8,6" />
+                <Button Content="تعديل" Command="{Binding EditCommand}" Margin="0,0,8,6" />
+                <Button Content="تحصيل دفعة" Command="{Binding ReceiveCommand}" Margin="0,0,8,6"
+                        Visibility="{Binding CanReceive, Converter={StaticResource Visible}}" />
+                <Button Content="كشف حساب" Command="{Binding StatementCommand}" Margin="0,0,8,6" />
+                <Button Content="رصيد افتتاحي" Command="{Binding OpeningBalanceCommand}" Margin="0,0,16,6"
+                        Visibility="{Binding CanSetOpening, Converter={StaticResource Visible}}" />
+                <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="220" Margin="0,0,10,6" ToolTip="الاسم أو الهاتف" />
+                <CheckBox Content="من عليهم رصيد فقط" IsChecked="{Binding WithBalanceOnly}" Margin="0,0,0,6" />
+            </WrapPanel>
+        </DockPanel>
+        <controls:StatusBanner DockPanel.Dock="Top" />
+        <DataGrid ItemsSource="{Binding Customers}" SelectedItem="{Binding Selected}" MouseDoubleClick="OnDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="*" />
+                <DataGridTextColumn Header="الهاتف" Binding="{Binding Phone}" Width="130" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الرقم الضريبي" Binding="{Binding TaxNumber}" Width="150" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="حد الائتمان" Binding="{Binding CreditLimit, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTemplateColumn Header="الرصيد المستحق" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Balance, Converter={StaticResource Money}}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource AmountCellBold}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsOverLimit}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource Danger}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="نشط" Binding="{Binding IsActive, Converter={StaticResource YesNo}}" Width="60" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

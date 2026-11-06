@@ -1,0 +1,35 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Forms.VoucherFields"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Amount, method, drawer and reference: shared by every money voucher. -->
+    <StackPanel>
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="المبلغ *" Style="{StaticResource FieldLabel}" />
+                <TextBox Text="{Binding AmountText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NumberBox}" FontSize="18" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="طريقة الدفع" Style="{StaticResource FieldLabel}" />
+                <ComboBox ItemsSource="{Binding Methods}" SelectedItem="{Binding Method}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Converter={StaticResource Arabic}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+        </Grid>
+        <CheckBox IsChecked="{Binding ThroughDrawer}" IsEnabled="{Binding CanUseDrawer}" Margin="0,0,0,4">
+            <TextBlock Text="{Binding DrawerLabel}" TextWrapping="Wrap" />
+        </CheckBox>
+        <TextBlock Text="متاح فقط للدفع النقدي عندما تكون لديك وردية مفتوحة. بدونه يُعتبر المبلغ من الخزنة لا من الدرج."
+                   Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+        <TextBlock Text="المرجع (رقم حوالة أو شيك، اختياري)" Style="{StaticResource FieldLabel}" />
+        <TextBox Text="{Binding Reference}" />
+    </StackPanel>
+</UserControl>

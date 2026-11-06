@@ -1,0 +1,48 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Pages.PurchasesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:MotoParts.Desktop.Views.Controls">
+    <DockPanel Margin="24,16">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <controls:DateRangeBar Margin="0,0,16,6" />
+            <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=300}" Width="220" Margin="0,0,10,6"
+                     ToolTip="رقم الأمر أو المورد أو رقم فاتورة المورد" />
+            <ComboBox ItemsSource="{Binding Statuses}" SelectedItem="{Binding Status}" Width="140" Margin="0,0,0,6" />
+        </WrapPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" Style="{StaticResource Muted}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal">
+                <Button Content="أمر شراء جديد" Style="{StaticResource PrimaryButton}" Command="{Binding NewCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+                <Button Content="فتح / تعديل" Command="{Binding OpenCommand}" Margin="0,0,8,0" />
+                <Button Content="استلام البضاعة" Style="{StaticResource SuccessButton}" Command="{Binding ReceiveCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding CanReceive, Converter={StaticResource Visible}}" />
+                <Button Content="إلغاء المسودة" Command="{Binding CancelCommand}"
+                        Visibility="{Binding CanManage, Converter={StaticResource Visible}}" />
+            </StackPanel>
+        </DockPanel>
+        <controls:StatusBanner DockPanel.Dock="Top" />
+        <DataGrid ItemsSource="{Binding Purchases}" SelectedItem="{Binding Selected}" MouseDoubleClick="OnDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="رقم الأمر" Binding="{Binding PurchaseNumber}" Width="130" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="التاريخ" Binding="{Binding PurchaseDate, Converter={StaticResource Date}}" Width="100" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="المورد" Binding="{Binding SupplierName}" Width="*" />
+                <DataGridTextColumn Header="فاتورة المورد" Binding="{Binding SupplierInvoiceNumber}" Width="120" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الأصناف" Binding="{Binding ItemCount}" Width="70" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="قبل الضريبة" Binding="{Binding Subtotal, Converter={StaticResource Money}}" Width="105" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="الضريبة" Binding="{Binding TaxTotal, Converter={StaticResource Money}}" Width="90" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total, Converter={StaticResource Money}}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+                <DataGridTextColumn Header="الدفع" Binding="{Binding PaymentMethod, Converter={StaticResource Arabic}}" Width="90" />
+                <DataGridTemplateColumn Header="الحالة" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource Badge}" Background="{Binding Status, Converter={StaticResource StatusBrush}}">
+                                <TextBlock Text="{Binding Status, Converter={StaticResource Arabic}}" FontSize="12.5" />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

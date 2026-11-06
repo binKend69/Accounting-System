@@ -1,0 +1,49 @@
+<UserControl x:Class="MotoParts.Desktop.Views.Forms.RefundFormView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <Border Style="{StaticResource Banner}" Margin="0,0,0,12">
+            <TextBlock TextWrapping="Wrap"
+                       Text="أدخل الكمية المرتجعة لكل صنف. ألغِ «يعود للمخزون» للقطع التالفة: يُرد مبلغها دون إعادتها للرفوف. الفاتورة الأصلية لا تُعدَّل، ويصدر إشعار مرتجع مستقل." />
+        </Border>
+
+        <DockPanel Margin="0,0,0,6">
+            <Button DockPanel.Dock="Right" Content="استرجاع الفاتورة كاملة" Style="{StaticResource LinkButton}" Click="OnSelectAll" />
+            <TextBlock Text="الأصناف القابلة للاسترجاع" Style="{StaticResource SectionTitle}" />
+        </DockPanel>
+
+        <DataGrid ItemsSource="{Binding Lines}" IsReadOnly="False" MaxHeight="320" RowHeight="38">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="الرمز" Binding="{Binding Item.Sku}" IsReadOnly="True" Width="100" ElementStyle="{StaticResource LtrCell}" />
+                <DataGridTextColumn Header="الصنف" Binding="{Binding Item.Name}" IsReadOnly="True" Width="*" />
+                <DataGridTextColumn Header="المباع" Binding="{Binding Item.Quantity, Converter={StaticResource Qty}}" IsReadOnly="True" Width="70" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="المرتجع سابقاً" Binding="{Binding Item.RefundedQuantity, Converter={StaticResource Qty}}" IsReadOnly="True" Width="100" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="قيمة السطر" Binding="{Binding Item.LineTotal, Converter={StaticResource Money}}" IsReadOnly="True" Width="95" ElementStyle="{StaticResource AmountCell}" />
+                <DataGridTextColumn Header="كمية الاسترجاع" Binding="{Binding QuantityText, UpdateSourceTrigger=PropertyChanged}" Width="110" ElementStyle="{StaticResource AmountCellBold}" />
+                <DataGridCheckBoxColumn Header="يعود للمخزون" Binding="{Binding Restock, UpdateSourceTrigger=PropertyChanged}" Width="100" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="طريقة رد المبلغ" Style="{StaticResource FieldLabel}" />
+                <ComboBox ItemsSource="{Binding Methods}" SelectedItem="{Binding Method}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Converter={StaticResource Arabic}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="سبب الاسترجاع *" Style="{StaticResource FieldLabel}" />
+                <TextBox Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" />
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</UserControl>

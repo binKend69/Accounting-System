@@ -1,0 +1,34 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:pages="clr-namespace:MotoParts.Desktop.Views.Pages"
+                    xmlns:forms="clr-namespace:MotoParts.Desktop.Views.Forms">
+    <!-- Which view shows which view-model. The main window's content area and
+         the form window both pick the template matching the current type
+         (WPF also matches base classes, which the voucher pages rely on). -->
+
+    <!-- Pages -->
+    <DataTemplate DataType="{x:Type pages:DashboardViewModel}"><pages:DashboardView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:PosViewModel}"><pages:PosView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:MyShiftViewModel}"><pages:MyShiftView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:SalesViewModel}"><pages:SalesView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:RefundsViewModel}"><pages:RefundsView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:CustomersViewModel}"><pages:CustomersView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:SuppliersViewModel}"><pages:SuppliersView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:VoucherListViewModel}"><pages:VoucherListView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:ProductsViewModel}"><pages:ProductsView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:CategoriesViewModel}"><pages:CategoriesView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:StockMovementsViewModel}"><pages:StockMovementsView /></DataTemplate>
+    <DataTemplate DataType="{x:Type pages:PurchasesViewModel}"><pages:PurchasesView /></DataTemplate>
+
+
+    <!-- Forms -->
+    <DataTemplate DataType="{x:Type forms:SaleDetailsForm}"><forms:SaleDetailsFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:RefundForm}"><forms:RefundFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:CustomerForm}"><forms:CustomerFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:SupplierForm}"><forms:SupplierFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:CustomerReceiptForm}"><forms:CustomerReceiptFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:SupplierPaymentForm}"><forms:SupplierPaymentFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:ExpenseForm}"><forms:ExpenseFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:ProductForm}"><forms:ProductFormView /></DataTemplate>
+    <DataTemplate DataType="{x:Type forms:PurchaseForm}"><forms:PurchaseFormView /></DataTemplate>
+</ResourceDictionary>
