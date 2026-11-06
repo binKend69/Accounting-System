@@ -7,7 +7,8 @@
 - [المتطلبات](../requirements/requirements.md)، [سيناريوهات القبول وخطة المراحل](../requirements/acceptance.md)، [القرارات ومنها U17](../requirements/decisions.md).
 - [عقود المخزون والمستندات](../../src/HisabTak.Application/Inventory/StockDocuments.cs)، [الترحيل](../../src/HisabTak.Infrastructure/Persistence/StockDocumentService.Posting.cs)، [الذمم والعكس](../../src/HisabTak.Infrastructure/Persistence/StockDocumentService.History.cs)، [حساب التكلفة](../../src/HisabTak.Domain/Inventory/StockCalculation.cs).
 - [اختبارات SQL التجارية](../../tests/HisabTak.Infrastructure.Tests/StockDocumentIntegrationTests.cs)، [الدفتر والمستندات](../../tests/HisabTak.Infrastructure.Tests/LedgerIntegrationTests.cs)، [القاعدة والأمن والاستعادة](../../tests/HisabTak.Infrastructure.Tests/SqlServerIntegrationTests.cs).
-- آخر دليل سابق للتعديل الحالي: الكود c57ba08646e0bf9f64a10c192847ab5541dec9e2، [تشغيل 42023469760](https://github.com/binKend69/Accounting-System/actions/runs/42023469760): 123 اختباراً عاماً على كل من Windows/Linux، و67 SQL في المهمة المنفصلة. فحص WPF بخدمات بديلة وليس SQL متصلاً بالواجهة. يضاف دليل التعديل الجديد بعد تشغيله، ولا تنسب إليه نتيجة التشغيل السابق.
+- آخر دليل سابق للتعديل الحالي: الكود c57ba08646e0bf9f64a10c192847ab5541dec9e2، [تشغيل 42023469760](https://github.com/binKend69/Accounting-System/actions/runs/42023469760): 123 اختباراً عاماً على كل من Windows/Linux، و67 SQL في المهمة المنفصلة. فحص WPF بخدمات بديلة وليس SQL متصلاً بالواجهة. هذه نتيجة الأساس السابق فقط.
+- التحقق من الكود `9442ab4e49e9e9ae9c3b676ada5844b801ce55fd`: [تشغيل42169786379](https://github.com/binKend69/Accounting-System/actions/runs/42169786379) نجح. البناء على Windows وLinux: صفر أخطاء وصفر تحذيرات؛123 اختباراً عاماً على كل منصة؛68 اختبار SQL ناجحاً بلا تجاوز في المهمة المنفصلة. فحص WPF نجح بخدمات بديلة؛ لم ينفذ قبول تفاعلي للواجهة مع SQL وطابعة العميل.
 
 ## بوابات المراحل
 
