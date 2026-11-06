@@ -33,7 +33,7 @@ $id = $instances.HISABTAKCI
 if (!$id) { throw 'SQL instance installation did not complete.' }
 $serviceName = 'MSSQL$HISABTAKCI'
 $service = Get-CimInstance Win32_Service | Where-Object Name -eq $serviceName
-$cert = New-SelfSignedCertificate -DnsName 'localhost', $env:COMPUTERNAME -CertStoreLocation 'Cert:\LocalMachine\My' -KeySpec KeyExchange -Provider 'Microsoft RSA SChannel Cryptographic Provider' -NotAfter (Get-Date).AddDays(3) -Type SSLServerAuthentication
+$cert = New-SelfSignedCertificate -Subject "CN=$env:COMPUTERNAME" -DnsName $env:COMPUTERNAME, 'localhost' -KeyUsage DigitalSignature,KeyEncipherment -KeyLength 2048 -HashAlgorithm SHA256 -CertStoreLocation 'Cert:\LocalMachine\My' -KeySpec KeyExchange -Provider 'Microsoft RSA SChannel Cryptographic Provider' -NotAfter (Get-Date).AddDays(3) -Type SSLServerAuthentication
 $public = Join-Path $env:RUNNER_TEMP 'hisabtak-sql-test.cer'
 Export-Certificate -Cert $cert -FilePath $public | Out-Null
 Import-Certificate -FilePath $public -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
@@ -51,7 +51,13 @@ Set-ItemProperty "$network\Tcp" Enabled 1
 Set-ItemProperty "$network\Tcp\IPAll" TcpDynamicPorts ''
 Set-ItemProperty "$network\Tcp\IPAll" TcpPort '14339'
 Set-Service $serviceName -StartupType Manual
-Restart-Service $serviceName -Force
+try { Restart-Service $serviceName -Force }
+catch {
+    $parameters = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$id\MSSQLServer\Parameters"
+    $log = $parameters.SQLArg1 -replace '^-e',''
+    if (Test-Path $log) { Get-Content $log -Tail 70 | Write-Host }
+    throw
+}
 # Windows integrated authentication; no password or bypass of certificate verification.
 "HISABTAK_UI_SQL_CONNECTION=Server=tcp:localhost,14339;Database=master;Integrated Security=true;Encrypt=true;TrustServerCertificate=false;Connect Timeout=30" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 Write-Host 'Disposable Windows SQL configured with certificate verification.'
