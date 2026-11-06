@@ -42,6 +42,9 @@ public sealed partial class LedgerIntegrationTests
             Assert.Equal(-expectedCost,final.Movements.Where(x=>x.Quantity<0).Sum(x=>x.Value));
             Assert.Equal(expectedCost-book,final.Movements.Where(x=>x.Quantity==0).Sum(x=>x.Value));
             await MatchStockLedger(test,s,Date,0,0);
+            var report=Assert.Single((await History(test,s,new(Date,Date,Kind:StockDocumentKind.Sale))).Rows,x=>x.DocumentId==final.Id);
+            Assert.Equal(-expectedCost,report.HistoricalCost);Assert.Equal(expectedCost-book,report.ValuationDifference);
+            Assert.Equal(-book,report.StockValue);
             await Assert.ThrowsAsync<InvalidOperationException>(()=>With<IStockDocumentService,StockDocument>(test,x=>x.ReverseAsync(s.F.Owner,first.Id,Date.AddDays(1),Guid.NewGuid())));
             await With<IStockDocumentService,StockDocument>(test,x=>x.ReverseAsync(s.F.Owner,final.Id,Date.AddDays(1),Guid.NewGuid()));
             await MatchStockLedger(test,s,Date,0,0);await MatchStockLedger(test,s,Date.AddDays(1),16,book);

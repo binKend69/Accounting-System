@@ -54,12 +54,17 @@
     <DataGridTextColumn Header="قيمة الضريبة" Binding="{Binding Row.Tax}" Width="95"/>
     <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total}" Width="100"/>
     <DataGridTextColumn Header="أثر كمية الأساس" Binding="{Binding Row.BaseQuantity}" Width="110"/>
+    <DataGridTextColumn Header="التكلفة التاريخية الموقعة بالأساس" Binding="{Binding Row.HistoricalCost}" Width="175"/>
+    <DataGridTextColumn Header="فرق التقييم بالأساس" Binding="{Binding Row.ValuationDifference}" Width="135"/>
     <DataGridTextColumn Header="أثر قيمة المخزون بالأساس" Binding="{Binding Row.StockValue}" Width="160"/>
     <DataGridTextColumn Header="حركة الأصل" Binding="{Binding Row.OriginalMovementId}" Width="95"/>
     <DataGridTextColumn Header="مستند الأصل" Binding="{Binding Row.OriginalDocumentId}" Width="95"/>
     <DataGridTextColumn Header="تاريخ الأصل" Binding="{Binding OriginalDate}" Width="105"/>
     <DataGridTextColumn Header="سعر الأصل" Binding="{Binding Row.OriginalUnitPrice}" Width="95"/>
     <DataGridTextColumn Header="وحدة الأصل" Binding="{Binding Row.OriginalUnit}" Width="90"/>
+    <DataGridTextColumn Header="رقم القيد" Binding="{Binding Row.JournalId}" Width="95"/>
+    <DataGridTextColumn Header="وقت الترحيل UTC" Binding="{Binding Row.PostedAtUtc, StringFormat=yyyy-MM-dd HH:mm:ss}" Width="175"/>
+    <DataGridTextColumn Header="رحله المستخدم" Binding="{Binding Row.PostedBy}" Width="130"/>
     <DataGridTextColumn Header="خصم سطر الأصل" Binding="{Binding Row.OriginalDiscount}" Width="110"/>
    </DataGrid.Columns></DataGrid>
   </DockPanel></TabItem>

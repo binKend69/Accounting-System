@@ -32,7 +32,7 @@ public sealed record StockHistoryRow(long DocumentId, long Number, DateOnly Date
     int CurrencyId, string Currency, decimal RateToBase, bool Credit, decimal Quantity, decimal UnitPrice,
     decimal Discount, bool TaxEnabled, decimal TaxRate, bool PricesIncludeTax, decimal Net, decimal Tax,
     decimal BaseQuantity, decimal StockValue, long? OriginalMovementId, long? OriginalDocumentId,
-    DateOnly? OriginalDate, decimal? OriginalUnitPrice, decimal? OriginalDiscount, string? OriginalUnit);
+    DateOnly? OriginalDate, decimal? OriginalUnitPrice, decimal? OriginalDiscount, string? OriginalUnit, decimal HistoricalCost, decimal ValuationDifference, long JournalId, DateTime PostedAtUtc, string PostedBy);
 public sealed record StockHistoryPage(IReadOnlyList<StockHistoryRow> Rows, bool HasMore);
 
 public interface IStockDocumentService
