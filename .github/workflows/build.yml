@@ -33,7 +33,7 @@ jobs:
       - name: Prepare Windows SQL for real UI acceptance
         timeout-minutes: 12
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: ./eng/start-windows-sql.ps1
       - name: Windows WPF with real SQL
         if: runner.os == 'Windows'

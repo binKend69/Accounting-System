@@ -39,9 +39,16 @@ Export-Certificate -Cert $cert -FilePath $public | Out-Null
 Import-Certificate -FilePath $public -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
 # X509Certificate2.PrivateKey exposes the legacy CSP container required by SQL Server.
 # GetRSAPrivateKey may return a wrapper without CspKeyContainerInfo; never apply an ACL to the parent directory.
+$cert = Get-Item ("Cert:\LocalMachine\My\" + $cert.Thumbprint)
 $privateKey = $cert.PrivateKey
 $container = $privateKey.CspKeyContainerInfo.UniqueKeyContainerName
-if ([string]::IsNullOrWhiteSpace($container)) { throw 'The test certificate has no legacy CSP container.' }
+if ([string]::IsNullOrWhiteSpace($container)) {
+    $keyInfo = (& certutil.exe -store My $cert.Thumbprint) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the test certificate container.' }
+    $match = [regex]::Match($keyInfo, '(?m)^\s*Unique container name:\s*(\S+)\s*$')
+    if (!$match.Success) { throw 'The test certificate has no inspectable legacy CSP container.' }
+    $container = $match.Groups[1].Value
+}
 $keyPath = Join-Path $env:ProgramData ('Microsoft\Crypto\RSA\MachineKeys\' + $container)
 if (!(Test-Path $keyPath -PathType Leaf)) { throw 'Certificate private-key file was not found.' }
 $acl = Get-Acl $keyPath
