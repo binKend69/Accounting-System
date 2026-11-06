@@ -141,6 +141,12 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         {
             await Branch(actor,branchId,ct);
             if(!Enum.IsDefined(accounts.BookPolicy))throw new ArgumentException("Invalid valuation policy.");
+            if(accounts.BookPolicy==LastPurchaseBookPolicy.RevalueAtReceipt)
+            {
+                var existing=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0))!,ct,("@b",branchId))).SingleOrDefault();
+                if(existing?.BookPolicy!=LastPurchaseBookPolicy.RevalueAtReceipt)
+                    throw new InvalidOperationException("New inventory settings must preserve acquisition value.");
+            }
             int[] ids = [accounts.StockAccountId,accounts.SalesAccountId,accounts.CostAccountId,accounts.AdjustmentAccountId,accounts.InputTaxAccountId,accounts.OutputTaxAccountId];
             if(accounts.FxGainAccountId.HasValue!=accounts.FxLossAccountId.HasValue) throw new ArgumentException("Configure both FX accounts.");
             if(accounts.FxGainAccountId is int gain && accounts.FxLossAccountId is int loss) ids=[..ids,gain,loss];

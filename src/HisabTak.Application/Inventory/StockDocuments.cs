@@ -13,7 +13,7 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
     int WarehouseId, int? TargetWarehouseId, int CurrencyId, decimal RateToBase, int CounterpartyAccountId,
     bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false);
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
-    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.Unspecified);
+    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.KeepAcquisitionValue);
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
     long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId, decimal? BilledQuantity = null);
 public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Version, int State, long? Number,

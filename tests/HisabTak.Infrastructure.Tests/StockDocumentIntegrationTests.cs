@@ -18,7 +18,7 @@ public sealed partial class LedgerIntegrationTests
             return await With<IChartOfAccountsService,int>(test,s=>s.CreateClassifiedAccountAsync(f.Owner,f.Branch,"0091"+n,"Test "+n,f.Group,f.Currency,1,group));
         }
         int cash=await Account(1,"CASH"),customer=await Account(2,"CUSTOMER"),supplier=await Account(3,"SUPPLIER");
-        var settings=new InventoryAccounts(f.Debit,f.Credit,await Account(4),await Account(5),await Account(6),await Account(7),BookPolicy:LastPurchaseBookPolicy.RevalueAtReceipt);
+        var settings=new InventoryAccounts(f.Debit,f.Credit,await Account(4),await Account(5),await Account(6),await Account(7),BookPolicy:LastPurchaseBookPolicy.KeepAcquisitionValue);
         await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(f.Owner,f.Branch,settings));
         await Change<IStockDocumentService>(test,x=>x.SetCreditLimitAsync(f.Owner,f.Branch,customer,100000));
         Task<int> Warehouse(string name)=>With<IInventorySetupService,int>(test,s=>s.CreateAsync(f.Owner,f.Branch,InventoryReferenceKind.Warehouse,name));
@@ -212,17 +212,38 @@ public sealed partial class LedgerIntegrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(()=>Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,1,150,BatchId:late)) with { Date=Date.AddDays(-1) }));
     }
     [SqlServerFact]
-    public async Task Last_purchase_receipt_revalues_remaining_stock_and_reversal_preserves_as_of_balances()
+    public async Task New_inventory_settings_default_to_acquisition_value_and_reject_revaluation()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);
+        var settings=(await With<IStockDocumentService,StockLookups>(test,x=>x.LookupsAsync(s.F.Owner,s.F.Branch))).Accounts!;
+        Assert.Equal(LastPurchaseBookPolicy.KeepAcquisitionValue,new InventoryAccounts(1,2,3,4,5,6).BookPolicy);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>Change<IStockDocumentService>(test,x=>x.ConfigureAsync(s.F.Owner,s.F.Branch,settings with {BookPolicy=LastPurchaseBookPolicy.RevalueAtReceipt})));
+        var reloaded=(await With<IStockDocumentService,StockLookups>(test,x=>x.LookupsAsync(s.F.Owner,s.F.Branch))).Accounts!;
+        Assert.Equal(settings,reloaded);
+    }
+    [SqlServerFact]
+    public async Task Purchase_prices_remain_distinct_and_reversal_preserves_historical_acquisition_value()
     {
         await using var test=await SqlTestDatabase.CreateAsync(); var s=await StoreAsync(test,method:CostMethod.LastPurchase);
-        await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,10,100)));
+        var first=await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,10,20)));
         await Assert.ThrowsAsync<InvalidOperationException>(()=>Change<IStockDocumentService>(test,x=>x.ChangeCostMethodAsync(s.F.Owner,s.Product,CostMethod.WeightedAverage)));
-        var later=await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,2,120)) with {Date=Date.AddDays(1)});
-        Assert.Equal(1440,Assert.Single(await Stock(test,s,Date.AddDays(1))).BookValue);
+        var later=await Trade(test,s,Draft(s,StockDocumentKind.Purchase,s.Cash,new StockLine(s.Product,s.Unit,10,30)) with {Date=Date.AddDays(1)});
+        var original=await With<IStockDocumentService,StockDocument>(test,x=>x.GetAsync(s.F.Owner,first.Id));
+        var second=await With<IStockDocumentService,StockDocument>(test,x=>x.GetAsync(s.F.Owner,later.Id));
+        Assert.Equal(20,Assert.Single(original.Draft.Lines).UnitPrice);
+        Assert.Equal(30,Assert.Single(second.Draft.Lines).UnitPrice);
+        Assert.Equal(200,Assert.Single(original.Movements).Value);
+        Assert.Equal(300,Assert.Single(second.Movements).Value);
+        var position=Assert.Single(await Stock(test,s,Date.AddDays(1)));
+        Assert.Equal(20,position.Quantity); Assert.Equal(30,position.LastPurchasePrice);
+        var ledger=await With<IJournalService,IReadOnlyList<LedgerBalance>>(test,x=>x.BalancesAsync(s.F.Owner,s.F.Branch,s.F.Currency,Date.AddDays(1)));
+        var inventory=Assert.Single(ledger,x=>x.AccountId==s.F.Debit);
+        Assert.Equal(500,inventory.Debit-inventory.Credit);
+        Assert.Equal(500,Assert.Single(await Stock(test,s,Date.AddDays(1))).BookValue);
         await Assert.ThrowsAsync<InvalidOperationException>(()=>With<IJournalService,long>(test,j=>j.ReverseAsync(s.F.Owner,later.JournalId!.Value,Date.AddDays(2),Guid.NewGuid())));
         await With<IStockDocumentService,StockDocument>(test,x=>x.ReverseAsync(s.F.Owner,later.Id,Date.AddDays(2),Guid.NewGuid()));
-        Assert.Equal(1440,Assert.Single(await Stock(test,s,Date.AddDays(1))).BookValue);
-        Assert.Equal(1000,Assert.Single(await Stock(test,s,Date.AddDays(2))).BookValue);
+        Assert.Equal(500,Assert.Single(await Stock(test,s,Date.AddDays(1))).BookValue);
+        Assert.Equal(200,Assert.Single(await Stock(test,s,Date.AddDays(2))).BookValue);
     }
     [SqlServerFact]
     public async Task Stock_rollback_removes_partial_movements_debt_number_and_journal()
