@@ -18,7 +18,7 @@ public sealed partial class LedgerIntegrationTests
             return await With<IChartOfAccountsService,int>(test,s=>s.CreateClassifiedAccountAsync(f.Owner,f.Branch,"0091"+n,"Test "+n,f.Group,f.Currency,1,group));
         }
         int cash=await Account(1,"CASH"),customer=await Account(2,"CUSTOMER"),supplier=await Account(3,"SUPPLIER");
-        var settings=new InventoryAccounts(f.Debit,f.Credit,await Account(4),await Account(5),await Account(6),await Account(7),BookPolicy:LastPurchaseBookPolicy.KeepAcquisitionValue);
+        var settings=new InventoryAccounts(f.Debit,f.Credit,await Account(4),await Account(5),await Account(6),await Account(7),BookPolicy:LastPurchaseBookPolicy.KeepAcquisitionValue,SalesReturnsAccountId:await Account(8));
         await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(f.Owner,f.Branch,settings));
         await Change<IStockDocumentService>(test,x=>x.SetCreditLimitAsync(f.Owner,f.Branch,customer,100000));
         Task<int> Warehouse(string name)=>With<IInventorySetupService,int>(test,s=>s.CreateAsync(f.Owner,f.Branch,InventoryReferenceKind.Warehouse,name));

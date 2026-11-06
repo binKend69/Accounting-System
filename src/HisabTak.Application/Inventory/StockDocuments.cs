@@ -13,7 +13,7 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
     int WarehouseId, int? TargetWarehouseId, int CurrencyId, decimal RateToBase, int CounterpartyAccountId,
     bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false);
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
-    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.KeepAcquisitionValue);
+    int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.KeepAcquisitionValue, int? SalesReturnsAccountId = null);
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
     long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId, decimal? BilledQuantity = null);
 public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Version, int State, long? Number,
@@ -25,8 +25,19 @@ public sealed record DebtPayment(Guid SourceKey, long InvoiceId, DateOnly Date, 
 
 public sealed record StockLookups(IReadOnlyList<InventoryReference> Warehouses, IReadOnlyList<InventoryReference> Units, InventoryAccounts? Accounts);
 
+public sealed record StockHistoryFilter(DateOnly From, DateOnly To, int? ProductId = null, int? WarehouseId = null,
+    StockDocumentKind? Kind = null, int Page = 0);
+public sealed record StockHistoryRow(long DocumentId, long Number, DateOnly Date, StockDocumentKind Kind, int State,
+    DateOnly? ReversalDate, int LineNumber, int ProductId, string Product, string Unit, string Warehouse, string Party,
+    int CurrencyId, string Currency, decimal RateToBase, bool Credit, decimal Quantity, decimal UnitPrice,
+    decimal Discount, bool TaxEnabled, decimal TaxRate, bool PricesIncludeTax, decimal Net, decimal Tax,
+    decimal BaseQuantity, decimal StockValue, long? OriginalMovementId, long? OriginalDocumentId,
+    DateOnly? OriginalDate, decimal? OriginalUnitPrice, decimal? OriginalDiscount, string? OriginalUnit);
+public sealed record StockHistoryPage(IReadOnlyList<StockHistoryRow> Rows, bool HasMore);
+
 public interface IStockDocumentService
 {
+    Task<StockHistoryPage> HistoryAsync(int actor, int branchId, StockHistoryFilter filter, CancellationToken ct = default);
     Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
     Task SetCurrencyPrecisionAsync(int actor, int currencyId, int precision, CancellationToken ct = default);

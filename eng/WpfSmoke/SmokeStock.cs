@@ -3,6 +3,7 @@ using HisabTak.Domain.Inventory;
 
 internal sealed class SmokeStock : IStockDocumentService
 {
+    public Task<StockHistoryPage> HistoryAsync(int actor,int branchId,StockHistoryFilter filter,CancellationToken ct=default) => Task.FromResult(new StockHistoryPage([],false));
     public StockDocumentDraft? Saved { get; private set; }
     public Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default) => Task.FromResult(new StockLookups([new(1,"المستودع",1)],[new(1,"حبة",null)],null));
     public Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default) => throw new NotSupportedException();

@@ -22,8 +22,11 @@ public partial class StockWindow : Window
     private StockDocument? current;
     private DebtPayment? pendingPayment;
     private int page;
+    private StockHistoryFilter? historyFilter;
     private Guid source=Guid.NewGuid();
     private bool busy;
+    internal Func<string,bool>? Confirmation { get; set; }
+    private bool Confirm(string message)=>Confirmation?.Invoke(message)??MessageBox.Show(this,message,"تأكيد",MessageBoxButton.YesNo)==MessageBoxResult.Yes;
     public sealed record DisplayLine(StockLine Line,string Product,string Unit);
     private sealed record Choice(int Id,string Label);
     private sealed record DocChoice(StockDocument Document,string Label);
@@ -33,6 +36,8 @@ public partial class StockWindow : Window
     public StockWindow(IServiceScopeFactory scopes,int actor,int branch,int currency,AccountLookup[] accounts,AccountingLookup[]? currencies=null)
     {
         InitializeComponent(); this.scopes=scopes; this.actor=actor; this.branch=branch; this.currency=currency; this.accounts=accounts;this.currencies=currencies??[new(currency,currency.ToString())];
+        HistoryFrom.SelectedDate=DateTime.Today.AddMonths(-1);HistoryTo.SelectedDate=DateTime.Today;
+        Bind(HistoryKind,new[]{new Choice(0,"الكل")}.Concat(Kinds.Where(x=>x.Id is >=2 and <=5)));
         Bind(Kind,Kinds); Kind.SelectedValue=(int)StockDocumentKind.Purchase;
         Lines.ItemsSource=rows; EntryDate.SelectedDate=ReverseDate.SelectedDate=AsOf.SelectedDate=PaymentDate.SelectedDate=DateTime.Today;
         Item.SelectionChanged+=RefreshLineOptions; Warehouse.SelectionChanged+=RefreshLineOptions;
@@ -60,6 +65,7 @@ public partial class StockWindow : Window
         catch(UnauthorizedAccessException){Status.Text="لا تملك صلاحية هذه العملية في الفرع.";}
         catch(DocumentConflictException){Status.Text="تغيرت النسخة المحفوظة. افتح المستند مجددًا من السجل.";}
         catch(Exception e) when(e is ArgumentException or FormatException or OverflowException){Status.Text="راجع الاختيارات والأرقام والتاريخ. استخدم النقطة للفاصل العشري.";}
+        catch(InvalidOperationException e) when(e.Message.Contains("sales returns account",StringComparison.Ordinal)){Status.Text="حدد حساب مردودات المبيعات المستقل في إعداد الفرع قبل الترحيل.";}
         catch(InvalidOperationException e) when(e.Message.Contains("valuation policy",StringComparison.Ordinal)){Status.Text="اختر معالجة فرق آخر شراء في إعداد حسابات الفرع."; }
         catch(InvalidOperationException e) when(e.Message.StartsWith("Insufficient",StringComparison.Ordinal)){Status.Text="الكمية المتاحة للصرف لا تكفي. راجع رصيد المستودع وصلاحية الدفعات."; }
         catch(InvalidOperationException e) when(e.Message.Contains("credit limit",StringComparison.OrdinalIgnoreCase)){Status.Text="راجع الحد الائتماني للعميل وقيمة رصيده قبل البيع الآجل."; }
@@ -82,14 +88,18 @@ public partial class StockWindow : Window
         Bind(BaseUnit,units);Bind(ExtraUnit,units);Bind(PriceUnit,units);
         var items=products.Select(x=>new Choice(x.Id,x.Code+" · "+x.Name));
         Bind(Item,items);Bind(SetupProduct,items);
+        Bind(HistoryProduct,new[]{new Choice(0,"الكل")}.Concat(items));
+        Bind(HistoryWarehouse,new[]{new Choice(0,"الكل")}.Concat(ws));
         Bind(PriceCurrency,currencies.Select(x=>new Choice(x.Id,x.Label)));var firstLoad=InvoiceCurrency.Items.Count==0;Bind(InvoiceCurrency,currencies.Select(x=>new Choice(x.Id,x.Label))); Bind(CurrencySettings,currencies.Select(x=>new Choice(x.Id,x.Label)));
         if(firstLoad)InvoiceCurrency.SelectedValue=currency;
         var ac=accounts.Where(x=>x.CurrencyId==currency).Select(x=>new Choice(x.Id,x.Label));
         foreach(var box in new[]{StockAccount,SalesAccount,CostAccount,Adjustment,InputTax,OutputTax}) Bind(box,ac);
         foreach(var box in new[]{Party,Cash,LimitCustomer}) Bind(box,accounts.Select(x=>new Choice(x.Id,x.Label)));
+        Bind(SalesReturnsAccount,new[]{new Choice(0,"غير محدد")}.Concat(ac));
         foreach(var box in new[]{FxGain,FxLoss}) Bind(box,new[]{new Choice(0,"غير محدد")}.Concat(ac));
         if(lookups.Accounts is InventoryAccounts a)
         {
+            SalesReturnsAccount.SelectedValue=a.SalesReturnsAccountId??0;
             StockAccount.SelectedValue=a.StockAccountId;SalesAccount.SelectedValue=a.SalesAccountId;CostAccount.SelectedValue=a.CostAccountId;
             Adjustment.SelectedValue=a.AdjustmentAccountId;InputTax.SelectedValue=a.InputTaxAccountId;OutputTax.SelectedValue=a.OutputTaxAccountId;FxGain.SelectedValue=a.FxGainAccountId??0;FxLoss.SelectedValue=a.FxLossAccountId??0;BookPolicy.SelectedIndex=(int)a.BookPolicy;
         }
@@ -129,7 +139,7 @@ public partial class StockWindow : Window
         try{var d=Build();return (d with {Lines=current.Draft.Lines})!=current.Draft || !d.Lines.SequenceEqual(current.Draft.Lines);}
         catch(Exception){return true;}
     }
-    private bool Discard()=>!Dirty() || MessageBox.Show(this,"ترك تعديلات المستند غير المحفوظة؟","تأكيد",MessageBoxButton.YesNo)==MessageBoxResult.Yes;
+    private bool Discard()=>!Dirty() || Confirm("ترك تعديلات المستند غير المحفوظة؟");
     private void Buttons()
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
@@ -186,11 +196,11 @@ public partial class StockWindow : Window
     });
     private async void Post(object sender,RoutedEventArgs e)=>await Run(async()=>{
         if(current==null || Dirty()){Status.Text="احفظ التعديلات قبل الترحيل.";return;}
-        if(MessageBox.Show(this,"ترحيل النسخة المحفوظة وإثبات آثارها؟","تأكيد",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+        if(!Confirm("ترحيل النسخة المحفوظة وإثبات آثارها؟"))return;
         ShowDocument(await Use(s=>s.PostAsync(actor,current.Id,current.Version)));await RefreshLists();Status.Text="تم الترحيل.";
     });
     private async void Reverse(object sender,RoutedEventArgs e)=>await Run(async()=>{
-        if(current==null || MessageBox.Show(this,"عكس المستند وآثاره في التاريخ المحدد؟","تأكيد",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+        if(current==null || !Confirm("عكس المستند وآثاره في التاريخ المحدد؟"))return;
         ShowDocument(await Use(s=>s.ReverseAsync(actor,current.Id,Day(ReverseDate),Guid.NewGuid())));await RefreshLists();Status.Text="تم العكس.";
     });
     private async void Open(object sender,RoutedEventArgs e)=>await Run(async()=>{if(Documents.SelectedItem is DocChoice doc && Discard()){ShowDocument(await Use(s=>s.GetAsync(actor,doc.Document.Id)));await LineOptions();Status.Text="تم فتح المستند."; }});
@@ -220,12 +230,12 @@ public partial class StockWindow : Window
     private async void CreateBatch(object sender,RoutedEventArgs e)=>await Run(async()=>{await Use(s=>s.CreateBatchAsync(actor,branch,Id(SetupProduct),Id(BatchWarehouse),BatchCode.Text,Day(Expiry)));await LineOptions();Status.Text="تم إنشاء الدفعة.";});
     private async void SetLimit(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetCreditLimitAsync(actor,branch,Id(LimitCustomer),Number(LimitAmount)));Status.Text="تم تحديث حد الائتمان.";});
     private async void SetPrecision(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetCurrencyPrecisionAsync(actor,Id(CurrencySettings),int.Parse(Decimals.Text,CultureInfo.InvariantCulture)));Status.Text="حفظت دقة العملة.";});
-    private async void Configure(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ConfigureAsync(actor,branch,new(Id(StockAccount),Id(SalesAccount),Id(CostAccount),Id(Adjustment),Id(InputTax),Id(OutputTax),Id(FxGain)==0?null:Id(FxGain),Id(FxLoss)==0?null:Id(FxLoss),(LastPurchaseBookPolicy)BookPolicy.SelectedIndex)));Status.Text="حفظت حسابات الترحيل.";});
+    private async void Configure(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ConfigureAsync(actor,branch,new(Id(StockAccount),Id(SalesAccount),Id(CostAccount),Id(Adjustment),Id(InputTax),Id(OutputTax),Id(FxGain)==0?null:Id(FxGain),Id(FxLoss)==0?null:Id(FxLoss),(LastPurchaseBookPolicy)BookPolicy.SelectedIndex,Id(SalesReturnsAccount)==0?null:Id(SalesReturnsAccount))));Status.Text="حفظت حسابات الترحيل.";});
     private async void Settle(object sender,RoutedEventArgs e)=>await Run(async()=>{
         if(Debts.SelectedItem is not DebtBalance debt){Status.Text="اختر فاتورة من قائمة الذمم.";return;}
         var candidate=new DebtPayment(pendingPayment?.SourceKey??Guid.NewGuid(),debt.DocumentId,Day(PaymentDate),Number(Payment),Id(Cash),string.IsNullOrWhiteSpace(CashAmount.Text)?null:Number(CashAmount),string.IsNullOrWhiteSpace(CashRate.Text)?null:Number(CashRate));
         if(pendingPayment!=null && candidate!=pendingPayment) candidate=candidate with {SourceKey=Guid.NewGuid()};
-        if(MessageBox.Show(this,$"تسجيل سداد {candidate.Amount} للفاتورة {debt.DocumentId}؟","تأكيد",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+        if(!Confirm($"تسجيل سداد {candidate.Amount} للفاتورة {debt.DocumentId}؟"))return;
         pendingPayment=candidate;await Use(s=>s.SettleAsync(actor,candidate));await RefreshLists();pendingPayment=null;Payment.Clear();CashAmount.Clear();CashRate.Clear();Status.Text="حفظ السداد وقيده.";
     });
 }

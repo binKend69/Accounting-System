@@ -186,6 +186,8 @@ public sealed partial class StockDocumentService
                 SELECT a.Payload,r.Precision,r.BaseCurrencyId FROM dbo.StockAccountSettings a JOIN dbo.LedgerRoundingSettings r ON r.BranchId=a.BranchId WHERE a.BranchId=@b
                 """,r=>(JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0))!,Convert.ToInt32(r.GetValue(1)),r.GetInt32(2)),ct,("@b",d.BranchId))).Single();
             var a=config.Item1; var precision=config.Item2;
+            if(d.Kind==StockDocumentKind.SalesReturn && a.SalesReturnsAccountId==null)
+                throw new InvalidOperationException("Configure a separate sales returns account before posting.");
             var baseId=config.Item3;
             if(d.CurrencyId==baseId && d.RateToBase!=1) throw new InvalidOperationException("Base currency requires identity rate.");
             var currencyPrecision=await CurrencyPrecision(d.CurrencyId,baseId,precision,ct);
@@ -194,7 +196,7 @@ public sealed partial class StockDocumentService
             {
                 bool sale=d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn;
                 await DemandClass(d.CounterpartyAccountId,d.BranchId,d.CurrencyId,d.Credit?[sale?"CUSTOMER":"SUPPLIER"]:["CASH","BANK"],ct);
-                if(new[]{a.StockAccountId,a.SalesAccountId,a.CostAccountId,a.AdjustmentAccountId,a.InputTaxAccountId,a.OutputTaxAccountId}.Contains(d.CounterpartyAccountId))
+                if(new[]{a.StockAccountId,a.SalesAccountId,a.CostAccountId,a.AdjustmentAccountId,a.InputTaxAccountId,a.OutputTaxAccountId}.Contains(d.CounterpartyAccountId) || a.SalesReturnsAccountId==d.CounterpartyAccountId)
                     throw new InvalidOperationException("Counterparty cannot also be a mapped stock account.");
             }
             var effects=new List<LineEffect>();
@@ -208,7 +210,7 @@ public sealed partial class StockDocumentService
             if(d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn)
             {
                 int sign=d.Kind==StockDocumentKind.Sale?1:-1;
-                Debit(d.CounterpartyAccountId,sign*(net+tax),true); Debit(a.SalesAccountId,-sign*net*d.RateToBase); Debit(a.OutputTaxAccountId,-sign*tax*d.RateToBase);
+                Debit(d.CounterpartyAccountId,sign*(net+tax),true); Debit(d.Kind==StockDocumentKind.SalesReturn?a.SalesReturnsAccountId!.Value:a.SalesAccountId,-sign*net*d.RateToBase); Debit(a.OutputTaxAccountId,-sign*tax*d.RateToBase);
                 Debit(a.CostAccountId,sign*cost); Debit(a.StockAccountId,-sign*cost);
             }
             else if(d.Kind is StockDocumentKind.Purchase or StockDocumentKind.PurchaseReturn)

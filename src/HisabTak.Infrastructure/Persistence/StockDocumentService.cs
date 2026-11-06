@@ -148,15 +148,17 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
                     throw new InvalidOperationException("New inventory settings must preserve acquisition value.");
             }
             int[] ids = [accounts.StockAccountId,accounts.SalesAccountId,accounts.CostAccountId,accounts.AdjustmentAccountId,accounts.InputTaxAccountId,accounts.OutputTaxAccountId];
+            if(accounts.SalesReturnsAccountId is int returns) ids=[..ids,returns];
             if(accounts.FxGainAccountId.HasValue!=accounts.FxLossAccountId.HasValue) throw new ArgumentException("Configure both FX accounts.");
             if(accounts.FxGainAccountId is int gain && accounts.FxLossAccountId is int loss) ids=[..ids,gain,loss];
             var currency = await db.Companies.Where(x=>x.IsActive).Select(x=>x.BaseCurrencyId).SingleAsync(ct);
             if (ids.Distinct().Count()!=ids.Length || currency is null || await db.Accounts.CountAsync(x=>ids.Contains(x.Id) && x.BranchId==branchId && x.CurrencyId==currency && x.IsActive && !x.IsSuspended,ct)!=ids.Length)
-                throw new InvalidOperationException("Choose six distinct active branch accounts in base currency.");
+                throw new InvalidOperationException("Choose distinct active branch accounts in base currency.");
             if(await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockDocuments WHERE BranchId=@b AND State>=2",ct,("@b",branchId))>0)
             {
                 var previous=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0))!,ct,("@b",branchId))).Single();
-                if((previous with { FxGainAccountId=null,FxLossAccountId=null,BookPolicy=LastPurchaseBookPolicy.Unspecified })!=(accounts with { FxGainAccountId=null,FxLossAccountId=null,BookPolicy=LastPurchaseBookPolicy.Unspecified }) ||
+                if((previous with { SalesReturnsAccountId=null,FxGainAccountId=null,FxLossAccountId=null,BookPolicy=LastPurchaseBookPolicy.Unspecified })!=(accounts with { SalesReturnsAccountId=null,FxGainAccountId=null,FxLossAccountId=null,BookPolicy=LastPurchaseBookPolicy.Unspecified }) ||
+                    previous.SalesReturnsAccountId!=null && previous.SalesReturnsAccountId!=accounts.SalesReturnsAccountId ||
                     previous.FxGainAccountId!=null && (previous.FxGainAccountId!=accounts.FxGainAccountId || previous.FxLossAccountId!=accounts.FxLossAccountId) ||
                     previous.BookPolicy!=LastPurchaseBookPolicy.Unspecified && previous.BookPolicy!=accounts.BookPolicy)
                     throw new InvalidOperationException("Stock account mappings are fixed after first posting.");

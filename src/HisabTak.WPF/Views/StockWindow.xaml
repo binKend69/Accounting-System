@@ -20,10 +20,49 @@
    <WrapPanel><TextBlock Text="الدفعة"/><ComboBox x:Name="Batch"/><TextBlock Text="سبب الاختيار اليدوي"/><TextBox x:Name="Reason" Width="170"/><TextBlock Text="رقم حركة الأصل للمردود"/><TextBox x:Name="Original"/></WrapPanel>
    <WrapPanel><Button x:Name="AddStockLineButton" Content="إضافة السطر" Click="AddLine"/><Button Content="حذف المحدد" Click="RemoveLine"/></WrapPanel>
    <DataGrid x:Name="Lines" Height="170"><DataGrid.Columns><DataGridTextColumn Header="الصنف" Binding="{Binding Product}" Width="2*"/><DataGridTextColumn Header="الوحدة" Binding="{Binding Unit}" Width="*"/><DataGridTextColumn Header="الكمية" Binding="{Binding Line.Quantity}" Width="*"/><DataGridTextColumn Header="السعر" Binding="{Binding Line.UnitPrice}" Width="*"/><DataGridTextColumn Header="الخصم" Binding="{Binding Line.Discount}" Width="*"/><DataGridTextColumn Header="الحركة الأصلية" Binding="{Binding Line.OriginalMovementId}" Width="*"/></DataGrid.Columns></DataGrid>
-   <WrapPanel><Button Content="مستند جديد" Click="NewDocument"/><Button x:Name="SaveButton" Content="حفظ المسودة" Click="Save"/><Button x:Name="PostButton" Content="ترحيل النسخة المحفوظة" Click="Post"/><TextBlock Text="تاريخ العكس"/><DatePicker x:Name="ReverseDate" Width="140"/><Button x:Name="PreviewButton" Content="معاينة وطباعة" Click="Preview"/><Button x:Name="ReverseButton" Content="عكس المستند" Click="Reverse"/></WrapPanel>
+   <WrapPanel><Button x:Name="NewStockDocumentButton" Content="مستند جديد" Click="NewDocument"/><Button x:Name="SaveButton" Content="حفظ المسودة" Click="Save"/><Button x:Name="PostButton" Content="ترحيل النسخة المحفوظة" Click="Post"/><TextBlock Text="تاريخ العكس"/><DatePicker x:Name="ReverseDate" Width="140"/><Button x:Name="PreviewButton" Content="معاينة وطباعة" Click="Preview"/><Button x:Name="ReverseButton" Content="عكس المستند" Click="Reverse"/></WrapPanel>
    <DataGrid x:Name="Moves" Height="115"><DataGrid.Columns><DataGridTextColumn Header="رقم الحركة" Binding="{Binding Id}" Width="*"/><DataGridTextColumn Header="الصنف" Binding="{Binding ProductId}" Width="*"/><DataGridTextColumn Header="الدفعة" Binding="{Binding BatchId}" Width="*"/><DataGridTextColumn Header="الكمية الأساسية" Binding="{Binding Quantity}" Width="*"/><DataGridTextColumn Header="أثر المخزون" Binding="{Binding Value}" Width="*"/><DataGridTextColumn Header="الصافي" Binding="{Binding Net}" Width="*"/><DataGridTextColumn Header="الضريبة" Binding="{Binding Tax}" Width="*"/></DataGrid.Columns></DataGrid>
   </StackPanel></ScrollViewer></TabItem>
   <TabItem Header="سجل المستندات"><DockPanel><WrapPanel DockPanel.Dock="Top"><Button Content="فتح المحدد" Click="Open"/><Button Content="تحديث" Click="Refresh"/><Button Content="السابق" Click="Previous"/><Button Content="التالي" Click="Next"/></WrapPanel><ListBox x:Name="Documents" DisplayMemberPath="Label"/></DockPanel></TabItem>
+  <TabItem Header="تاريخ البيع والشراء" x:Name="HistoryTab"><DockPanel>
+   <StackPanel DockPanel.Dock="Top">
+    <WrapPanel><TextBlock Text="من"/><DatePicker x:Name="HistoryFrom" Width="135"/><TextBlock Text="إلى"/><DatePicker x:Name="HistoryTo" Width="135"/><TextBlock Text="الصنف"/><ComboBox x:Name="HistoryProduct"/><TextBlock Text="المستودع"/><ComboBox x:Name="HistoryWarehouse"/><TextBlock Text="النوع"/><ComboBox x:Name="HistoryKind"/></WrapPanel>
+    <WrapPanel><Button x:Name="HistorySearchButton" Content="بحث" Click="SearchHistory"/><Button x:Name="HistoryPreviousButton" Content="السابق" Click="PreviousHistory"/><Button x:Name="HistoryNextButton" Content="التالي" Click="NextHistory"/><TextBlock x:Name="HistoryPageText"/><Button x:Name="HistoryOpenButton" Content="فتح المستند وتفاصيل الدفعات" Click="OpenHistory"/><Button Content="فتح أصل المردود" Click="OpenHistoryOriginal"/></WrapPanel>
+    <TextBlock Text="المبالغ بعملة المستند، والأثر المخزني بعملة الأساس. السطر المعكوس ظاهر للتتبع وليس رصيداً قائماً. أسعار وخصومات أصل المردود تخص وحدة وسطر الأصل؛ صافي المردود وضريبته هما حصته الفعلية. الأسماء المعروضة هي أسماء المراجع الحالية." TextWrapping="Wrap"/>
+   </StackPanel>
+   <DataGrid x:Name="HistoryGrid" HorizontalScrollBarVisibility="Auto"><DataGrid.Columns>
+    <DataGridTextColumn Header="التاريخ" Binding="{Binding Date}" Width="105"/>
+    <DataGridTextColumn Header="النوع" Binding="{Binding Kind}" Width="95"/>
+    <DataGridTextColumn Header="رقم المستند" Binding="{Binding Row.Number}" Width="100"/>
+    <DataGridTextColumn Header="هوية المستند" Binding="{Binding Row.DocumentId}" Width="100"/>
+    <DataGridTextColumn Header="الحالة" Binding="{Binding State}" Width="80"/>
+    <DataGridTextColumn Header="تاريخ العكس" Binding="{Binding ReversalDate}" Width="105"/>
+    <DataGridTextColumn Header="الصنف" Binding="{Binding Row.Product}" Width="180"/>
+    <DataGridTextColumn Header="سطر" Binding="{Binding Row.LineNumber}" Width="50"/>
+    <DataGridTextColumn Header="الوحدة" Binding="{Binding Row.Unit}" Width="80"/>
+    <DataGridTextColumn Header="المستودع" Binding="{Binding Row.Warehouse}" Width="130"/>
+    <DataGridTextColumn Header="حساب الطرف" Binding="{Binding Row.Party}" Width="160"/>
+    <DataGridTextColumn Header="الدفع" Binding="{Binding Payment}" Width="65"/>
+    <DataGridTextColumn Header="العملة" Binding="{Binding Row.Currency}" Width="70"/>
+    <DataGridTextColumn Header="سعر التحويل" Binding="{Binding Row.RateToBase}" Width="100"/>
+    <DataGridTextColumn Header="الكمية" Binding="{Binding Row.Quantity}" Width="80"/>
+    <DataGridTextColumn Header="سعر الوحدة" Binding="{Binding Price}" Width="90"/>
+    <DataGridTextColumn Header="خصم السطر" Binding="{Binding Discount}" Width="90"/>
+    <DataGridTextColumn Header="الضريبة" Binding="{Binding TaxMode}" Width="120"/>
+    <DataGridTextColumn Header="النسبة" Binding="{Binding TaxRate}" Width="70"/>
+    <DataGridTextColumn Header="الصافي" Binding="{Binding Row.Net}" Width="95"/>
+    <DataGridTextColumn Header="قيمة الضريبة" Binding="{Binding Row.Tax}" Width="95"/>
+    <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total}" Width="100"/>
+    <DataGridTextColumn Header="أثر كمية الأساس" Binding="{Binding Row.BaseQuantity}" Width="110"/>
+    <DataGridTextColumn Header="أثر قيمة المخزون بالأساس" Binding="{Binding Row.StockValue}" Width="160"/>
+    <DataGridTextColumn Header="حركة الأصل" Binding="{Binding Row.OriginalMovementId}" Width="95"/>
+    <DataGridTextColumn Header="مستند الأصل" Binding="{Binding Row.OriginalDocumentId}" Width="95"/>
+    <DataGridTextColumn Header="تاريخ الأصل" Binding="{Binding OriginalDate}" Width="105"/>
+    <DataGridTextColumn Header="سعر الأصل" Binding="{Binding Row.OriginalUnitPrice}" Width="95"/>
+    <DataGridTextColumn Header="وحدة الأصل" Binding="{Binding Row.OriginalUnit}" Width="90"/>
+    <DataGridTextColumn Header="خصم سطر الأصل" Binding="{Binding Row.OriginalDiscount}" Width="110"/>
+   </DataGrid.Columns></DataGrid>
+  </DockPanel></TabItem>
   <TabItem Header="الأرصدة والذمم"><StackPanel><WrapPanel><TextBlock Text="أرصدة المخزون في تاريخ"/><DatePicker x:Name="AsOf" Width="140"/><Button Content="عرض الأرصدة" Click="Refresh"/></WrapPanel>
    <DataGrid x:Name="Balances" Height="150"><DataGrid.Columns><DataGridTextColumn Header="الصنف" Binding="{Binding Product}" Width="2*"/><DataGridTextColumn Header="المستودع" Binding="{Binding Warehouse}" Width="2*"/><DataGridTextColumn Header="الكمية" Binding="{Binding Quantity}" Width="*"/><DataGridTextColumn Header="القيمة" Binding="{Binding BookValue}" Width="*"/></DataGrid.Columns></DataGrid>
    <TextBlock Text="الذمم الحالية"/><DataGrid x:Name="Debts" Height="160"><DataGrid.Columns><DataGridTextColumn Header="رقم سجل الفاتورة" Binding="{Binding DocumentId}" Width="*"/><DataGridTemplateColumn Header="الاتجاه"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="مستحق علينا"/><Style.Triggers><DataTrigger Binding="{Binding Receivable}" Value="True"><Setter Property="Text" Value="مستحق لنا"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="حساب الطرف" Binding="{Binding AccountId}" Width="*"/><DataGridTextColumn Header="مبلغ الفاتورة" Binding="{Binding OriginalAmount}" Width="*"/><DataGridTextColumn Header="المتبقي" Binding="{Binding RemainingAmount}" Width="*"/></DataGrid.Columns></DataGrid>
@@ -38,7 +77,7 @@
    <WrapPanel><TextBlock Text="الشريحة"/><TextBox x:Name="SetupTier" Text="تجزئة"/><TextBlock Text="العملة"/><ComboBox x:Name="PriceCurrency"/><TextBlock Text="السعر"/><TextBox x:Name="SetupPrice"/><Button Content="حفظ سعر الوحدة" Click="SetPrice"/></WrapPanel>
    <WrapPanel><TextBlock Text="المستودع"/><ComboBox x:Name="BatchWarehouse"/><TextBlock Text="رمز الدفعة"/><TextBox x:Name="BatchCode"/><TextBlock Text="الصلاحية"/><DatePicker x:Name="Expiry" Width="135"/><Button Content="إنشاء الدفعة" Click="CreateBatch"/></WrapPanel>
    <Separator Margin="4,12"/><TextBlock Text="حسابات ترحيل الفرع بعملة الأساس" FontSize="20"/>
-   <UniformGrid Columns="3"><StackPanel><TextBlock Text="المخزون"/><ComboBox x:Name="StockAccount"/></StackPanel><StackPanel><TextBlock Text="المبيعات"/><ComboBox x:Name="SalesAccount"/></StackPanel><StackPanel><TextBlock Text="تكلفة المبيعات"/><ComboBox x:Name="CostAccount"/></StackPanel><StackPanel><TextBlock Text="تسويات المخزون"/><ComboBox x:Name="Adjustment"/></StackPanel><StackPanel><TextBlock Text="ضريبة المدخلات"/><ComboBox x:Name="InputTax"/></StackPanel><StackPanel><TextBlock Text="ضريبة المخرجات"/><ComboBox x:Name="OutputTax"/></StackPanel><StackPanel><TextBlock Text="أرباح الصرف"/><ComboBox x:Name="FxGain"/></StackPanel><StackPanel><TextBlock Text="خسائر الصرف"/><ComboBox x:Name="FxLoss"/></StackPanel></UniformGrid>
+   <UniformGrid Columns="3"><StackPanel><TextBlock Text="المخزون"/><ComboBox x:Name="StockAccount"/></StackPanel><StackPanel><TextBlock Text="المبيعات"/><ComboBox x:Name="SalesAccount"/></StackPanel><StackPanel><TextBlock Text="مردودات المبيعات"/><ComboBox x:Name="SalesReturnsAccount"/></StackPanel><StackPanel><TextBlock Text="تكلفة المبيعات"/><ComboBox x:Name="CostAccount"/></StackPanel><StackPanel><TextBlock Text="تسويات المخزون"/><ComboBox x:Name="Adjustment"/></StackPanel><StackPanel><TextBlock Text="ضريبة المدخلات"/><ComboBox x:Name="InputTax"/></StackPanel><StackPanel><TextBlock Text="ضريبة المخرجات"/><ComboBox x:Name="OutputTax"/></StackPanel><StackPanel><TextBlock Text="أرباح الصرف"/><ComboBox x:Name="FxGain"/></StackPanel><StackPanel><TextBlock Text="خسائر الصرف"/><ComboBox x:Name="FxLoss"/></StackPanel></UniformGrid>
    <WrapPanel><TextBlock Text="معالجة فرق آخر شراء"/><ComboBox x:Name="BookPolicy" SelectedIndex="1"><ComboBoxItem Content="لم يحدد بعد"/><ComboBoxItem Content="حفظ قيمة الاقتناء"/><ComboBoxItem Content="إعادة التقييم — إعداد تاريخي" IsEnabled="False"/></ComboBox></WrapPanel>
    <WrapPanel><TextBlock Text="حساب العميل"/><ComboBox x:Name="LimitCustomer"/><TextBlock Text="حد الائتمان بعملة الحساب"/><TextBox x:Name="LimitAmount"/><Button Content="حفظ حد الائتمان" Click="SetLimit"/></WrapPanel>
    <WrapPanel><TextBlock Text="دقة العملة الإضافية"/><ComboBox x:Name="CurrencySettings"/><TextBox x:Name="Decimals" Text="2"/><Button Content="تثبيت الدقة" Click="SetPrecision"/></WrapPanel>

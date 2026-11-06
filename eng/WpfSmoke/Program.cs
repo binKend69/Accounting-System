@@ -16,9 +16,18 @@ using Microsoft.Extensions.Logging;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        if(args.Contains("--sql"))
+        {
+            var task=SqlUiSmoke.Run();
+            var frame=new System.Windows.Threading.DispatcherFrame();
+            var timer=new System.Windows.Threading.DispatcherTimer {Interval=TimeSpan.FromMilliseconds(20)};
+            timer.Tick+=(_,_)=>{if(task.IsCompleted){timer.Stop();frame.Continue=false;}};
+            timer.Start();System.Windows.Threading.Dispatcher.PushFrame(frame);task.GetAwaiter().GetResult();
+            app.Shutdown();return;
+        }
         using var provider = new ServiceCollection().AddLogging().BuildServiceProvider();
         var window = new MainWindow(new MainWindowViewModel(new ApplicationIdentity("HisabTak", "smoke")),
             provider.GetRequiredService<IServiceScopeFactory>(), provider.GetRequiredService<ILogger<MainWindow>>());
