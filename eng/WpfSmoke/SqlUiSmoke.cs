@@ -69,6 +69,12 @@ internal static class SqlUiSmoke
                 var doc=(await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(x=>x.ListAsync(actor,setup.Branch)))[0];
                 Check(doc.State==2,"UI posting failed.");Check(!((Button)window.FindName("SaveButton")).IsEnabled,"Posted editor writable.");return doc;
             }
+            Text("ProductSearch","U");
+            Check(((ComboBox)window.FindName("ProductMatches")).Items.Count == 0,"Single character should not select a product.");
+            Text("ProductSearch","UI-1");
+            Check(((ComboBox)window.FindName("ProductMatches")).Items.Count == 1,"Product code search failed.");
+            await Click(window,"ChooseProductButton");
+            Check(((ComboBox)window.FindName("Unit")).SelectedValue is int selectedUnit && selectedUnit == setup.Unit,"Search did not select base unit.");
             var first=await Enter(StockDocumentKind.Purchase,-3,"10","20");
             var second=await Enter(StockDocumentKind.Purchase,-2,"10","30");
             var sale=await Enter(StockDocumentKind.Sale,-1,"3","50");

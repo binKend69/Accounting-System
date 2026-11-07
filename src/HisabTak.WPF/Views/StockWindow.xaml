@@ -10,11 +10,17 @@
  <DockPanel Margin="16"><TextBlock x:Name="TitleText" DockPanel.Dock="Top" FontSize="23" FontWeight="SemiBold"/>
  <TextBlock x:Name="Status" DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="#13586E" AutomationProperties.LiveSetting="Polite"/>
  <TabControl x:Name="Tabs">
-  <TabItem Header="المستند"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="10">
+  <TabItem Header="المستند">
+   <TabItem.CommandBindings><CommandBinding Command="ApplicationCommands.Find" Executed="FocusProductSearch"/></TabItem.CommandBindings>
+   <TabItem.InputBindings><KeyBinding Key="F" Modifiers="Control" Command="ApplicationCommands.Find"/></TabItem.InputBindings><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="10">
    <WrapPanel><TextBlock Text="النوع"/><ComboBox x:Name="Kind" DisplayMemberPath="Label" SelectedValuePath="Id"/><TextBlock Text="التاريخ"/><DatePicker x:Name="EntryDate" Width="145"/><CheckBox x:Name="Credit" Content="آجل" VerticalAlignment="Center" Margin="12"/><TextBlock Text="حساب العميل أو المورد أو النقدية"/><ComboBox x:Name="Party"/></WrapPanel>
    <WrapPanel><TextBlock Text="المستودع"/><ComboBox x:Name="Warehouse"/><TextBlock Text="العملة"/><ComboBox x:Name="InvoiceCurrency"/><TextBlock Text="سعرها إلى الأساس"/><TextBox x:Name="InvoiceRate" Text="1"/><TextBlock Text="إلى مستودع (للتحويل)"/><ComboBox x:Name="Target"/></WrapPanel>
    <WrapPanel><CheckBox x:Name="TaxEnabled" Content="تطبيق الضريبة" VerticalAlignment="Center"/><TextBlock Text="النسبة %"/><TextBox x:Name="TaxRate" Text="0"/><CheckBox x:Name="Inclusive" Content="السعر شامل الضريبة" VerticalAlignment="Center"/></WrapPanel>
    <Separator Margin="4,12"/>
+   <WrapPanel><Label Target="{Binding ElementName=ProductSearch}" Content="بحث باسم الصنف أو رمزه (Ctrl+F)"/>
+    <TextBox Name="ProductSearch" Width="145" TextChanged="ProductSearchChanged" ToolTip="أدخل حرفين على الأقل"/>
+    <ComboBox Name="ProductMatches" DisplayMemberPath="Label" SelectedValuePath="Id" AutomationProperties.Name="نتائج بحث الأصناف"/>
+    <Button Name="ChooseProductButton" Content="اختيار نتيجة البحث" Click="ChooseProduct"/></WrapPanel>
    <WrapPanel><TextBlock Text="باركود الوحدة"/><TextBox x:Name="ScanCode"/><Button Content="اختيار بالباركود" Click="Scan"/><TextBlock Text="شريحة السعر"/><TextBox x:Name="SaleTier" Text="تجزئة"/><Button Content="جلب سعر الوحدة بعملة المستند" Click="Quote"/></WrapPanel>
    <WrapPanel><TextBlock Text="الصنف"/><ComboBox x:Name="Item"/><TextBlock Text="الوحدة"/><ComboBox x:Name="Unit"/><TextBlock Text="الكمية"/><TextBox x:Name="Quantity" Text="1"/><TextBlock Text="سعر الوحدة"/><TextBox x:Name="Price" Text="0"/><TextBlock Text="خصم السطر"/><TextBox x:Name="Discount" Text="0"/></WrapPanel>
    <WrapPanel><TextBlock Text="الدفعة"/><ComboBox x:Name="Batch"/><TextBlock Text="سبب الاختيار اليدوي"/><TextBox x:Name="Reason" Width="170"/><TextBlock Text="رقم حركة الأصل للمردود"/><TextBox x:Name="Original"/></WrapPanel>
