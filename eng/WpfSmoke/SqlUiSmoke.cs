@@ -69,6 +69,12 @@ internal static class SqlUiSmoke
                 var doc=(await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(x=>x.ListAsync(actor,setup.Branch)))[0];
                 Check(doc.State==2,"UI posting failed.");Check(!((Button)window.FindName("SaveButton")).IsEnabled,"Posted editor writable.");return doc;
             }
+            Text("ProductSearch","U");
+            Check(((ComboBox)window.FindName("ProductMatches")).Items.Count == 0,"Single character should not select a product.");
+            Text("ProductSearch","UI-1");
+            Check(((ComboBox)window.FindName("ProductMatches")).Items.Count == 1,"Product code search failed.");
+            await Click(window,"ChooseProductButton");
+            Check(((ComboBox)window.FindName("Unit")).SelectedValue is int selectedUnit && selectedUnit == setup.Unit,"Search did not select base unit.");
             var first=await Enter(StockDocumentKind.Purchase,-3,"10","20");
             var second=await Enter(StockDocumentKind.Purchase,-2,"10","30");
             var sale=await Enter(StockDocumentKind.Sale,-1,"3","50");
@@ -104,6 +110,7 @@ internal static class SqlUiSmoke
             Check(((TextBlock)limited.FindName("Status")).Text.Contains("لا تملك صلاحية"),"Read-only UI did not show permission rejection.");
             Check((await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(x=>x.ListAsync(actor,setup.Branch))).Count==4,"Denied UI save wrote a document.");
             limited.Close();
+            await AdministrationSmoke.Run(services, actor, reader, setup.Branch, password);
             Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection. Confirmation dialogs use a test adapter; services and SQL are real.");
         }
         finally

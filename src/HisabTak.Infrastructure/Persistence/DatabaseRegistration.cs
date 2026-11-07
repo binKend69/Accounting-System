@@ -26,6 +26,9 @@ public static class DatabaseRegistration
         services.AddDbContext<HisabTakDbContext>(options => options.UseSqlServer(connection.ConnectionString,
             sql => sql.UseCompatibilityLevel(160)));
         services.AddScoped<ReferenceDataSeeder>();
+        services.AddScoped<IAdministrationAccess, AdministrationAccess>();
+        services.AddScoped<IReferenceDirectory, ReferenceDirectory>();
+        services.AddScoped<ISecurityDirectory, SecurityDirectory>();
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddScoped<IAuthorizationService, AuthorizationService>();
         services.AddScoped<IInitialOwnerService, InitialOwnerService>();
