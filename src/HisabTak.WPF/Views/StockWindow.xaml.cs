@@ -88,6 +88,7 @@ public partial class StockWindow : Window
         Bind(BaseUnit,units);Bind(ExtraUnit,units);Bind(PriceUnit,units);
         var items=products.Select(x=>new Choice(x.Id,x.Code+" · "+x.Name));
         Bind(Item,items);Bind(SetupProduct,items);
+        FilterProducts();
         Bind(HistoryProduct,new[]{new Choice(0,"الكل")}.Concat(items));
         Bind(HistoryWarehouse,new[]{new Choice(0,"الكل")}.Concat(ws));
         Bind(PriceCurrency,currencies.Select(x=>new Choice(x.Id,x.Label)));var firstLoad=InvoiceCurrency.Items.Count==0;Bind(InvoiceCurrency,currencies.Select(x=>new Choice(x.Id,x.Label))); Bind(CurrencySettings,currencies.Select(x=>new Choice(x.Id,x.Label)));
@@ -207,6 +208,33 @@ public partial class StockWindow : Window
     private async void Refresh(object sender,RoutedEventArgs e)=>await Run(RefreshLists);
     private async void Next(object sender,RoutedEventArgs e)=>await Run(async()=>{page++;await RefreshLists();});
     private async void Previous(object sender,RoutedEventArgs e)=>await Run(async()=>{page=Math.Max(0,page-1);await RefreshLists();});
+    private void FocusProductSearch(object sender, System.Windows.Input.ExecutedRoutedEventArgs e)
+    {
+        ProductSearch.Focus();
+        ProductSearch.SelectAll();
+    }
+    private void ProductSearchChanged(object sender, TextChangedEventArgs e) => FilterProducts();
+    private void FilterProducts()
+    {
+        if (ProductMatches is null) return;
+        var query = ProductSearch.Text.Trim();
+        var matches = query.Length < 2 ? Array.Empty<Choice>() : products
+            .Where(x => x.Code.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                x.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+            .Select(x => new Choice(x.Id, x.Code + " · " + x.Name)).ToArray();
+        ProductMatches.ItemsSource = matches;
+        if (matches.Length > 0) ProductMatches.SelectedIndex = 0;
+        ChooseProductButton.IsEnabled = matches.Length > 0;
+    }
+    private async void ChooseProduct(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        if (current?.State is 2 or 3 || ProductMatches.SelectedValue is not int id) return;
+        Item.SelectedValue = id;
+        await LineOptions();
+        Unit.SelectedValue = products.Single(x => x.Id == id).BaseUnitId;
+        Price.Text = "0";
+        Status.Text = "تم اختيار الصنف ووحدته الأساسية. أدخل السعر أو اجلبه من الشريحة.";
+    });
     private async void Scan(object sender,RoutedEventArgs e)=>await Run(async()=>{
         if(current?.State is 2 or 3)return;
         var match=await Use(s=>s.ScanAsync(actor,ScanCode.Text));
