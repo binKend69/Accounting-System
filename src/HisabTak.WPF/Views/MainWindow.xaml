@@ -26,7 +26,7 @@
         <Grid x:Name="WorkspacePanel" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12"><TextBlock Text="الفرع" VerticalAlignment="Center"/><ComboBox x:Name="BranchBox" Width="260" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="Branch_Changed"/><TextBlock x:Name="UserLabel" VerticalAlignment="Center" Margin="20,0"/></StackPanel>
-            <TabControl Grid.Row="1" Background="White" BorderThickness="0" Padding="16">
+            <TabControl Name="WorkTabs" Grid.Row="1" Background="White" BorderThickness="0" Padding="16">
                 <TabItem Header="المستندات">
                     <Grid Margin="8"><Grid.ColumnDefinitions><ColumnDefinition Width="320"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <Grid Margin="0,0,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -52,7 +52,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
-                <TabItem Header="الإدارة"><Button Content="إدارة المراجع والصلاحيات" Click="Administration_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"/></TabItem>
+                <TabItem Name="AdministrationTab" Header="الإدارة"><Button Content="إدارة المراجع والصلاحيات" Click="Administration_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"/></TabItem>
                 <TabItem Header="المبيعات والمخزون"><StackPanel Margin="24" HorizontalAlignment="Right"><TextBlock Text="فواتير الفرع وحركة المخزون" FontSize="22"/><Button Content="فتح المبيعات والمشتريات والمخزون" Click="StockWindow_Click" Margin="0,12"/></StackPanel></TabItem>
                 <TabItem Header="الحسابات والإعداد المالي"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
                     <TextBlock Text="إنشاء حساب للفرع المحدد" FontSize="22" Margin="0,0,0,12"/>

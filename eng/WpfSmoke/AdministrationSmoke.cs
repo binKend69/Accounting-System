@@ -9,12 +9,14 @@ using HisabTak.Application.Setup;
 using HisabTak.Domain.Security;
 using HisabTak.Infrastructure.Persistence;
 using HisabTak.WPF.Views;
+using HisabTak.WPF.ViewModels;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 internal static class AdministrationSmoke
 {
-    public static async Task Run(IServiceProvider services, int owner, int reader, int branch)
+    public static async Task Run(IServiceProvider services, int owner, int reader, int branch, string password)
     {
         var scopes = services.GetRequiredService<IServiceScopeFactory>();
         await using var metadata = scopes.CreateAsyncScope();
@@ -121,6 +123,31 @@ internal static class AdministrationSmoke
             Check(((ComboBox)limited.FindName("Users")).Items.Count == 0, "User directory leaked.");
         }
         finally { limited.Close(); }
+
+        var security = metadata.ServiceProvider.GetRequiredService<ISecurityDirectory>();
+        var readPermission = (await db.Permissions.SingleAsync(x => x.Code == PermissionCodes.JournalRead)).Id;
+        await security.SetPermissionAsync(owner, reader, readPermission, false);
+        await security.SetPermissionAsync(owner, reader, permission, true);
+        var shell = new MainWindow(new MainWindowViewModel(new HisabTak.Application.ApplicationIdentity("HisabTak", "P08")),
+            scopes, services.GetRequiredService<ILogger<MainWindow>>());
+        shell.Show();
+        try
+        {
+            ((TextBox)shell.FindName("Username")).Text = "ui-reader";
+            ((PasswordBox)shell.FindName("Password")).Password = password;
+            ((Button)shell.FindName("LoginButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var until = DateTime.UtcNow.AddSeconds(30);
+            while (!((FrameworkElement)shell.FindName("LoginPanel")).IsEnabled)
+            {
+                if (DateTime.UtcNow > until) throw new TimeoutException("Administration login timed out.");
+                await Task.Delay(20);
+            }
+            var tabs = (TabControl)shell.FindName("WorkTabs");
+            Check(tabs.IsVisible && tabs.SelectedItem == shell.FindName("AdministrationTab") &&
+                tabs.Items.OfType<TabItem>().Count(x => x.Visibility == Visibility.Visible) == 1,
+                "Setup-only login must open administration without exposing accounting.");
+        }
+        finally { shell.Close(); }
     }
 
     private static async Task Invoke(Window window, string name)

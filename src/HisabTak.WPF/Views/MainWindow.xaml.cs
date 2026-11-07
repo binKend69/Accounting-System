@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using HisabTak.Application.Accounting;
 using HisabTak.Application.Inventory;
+using HisabTak.Application.Setup;
 using HisabTak.Application.Security;
 using HisabTak.Domain.Accounting;
 using HisabTak.WPF.ViewModels;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private int? actorId;
     private int? baseCurrencyId;
     private bool busy;
+    private bool administrationOnly;
     private IReadOnlyList<InventoryReference> inventoryLocations = [];
     private void ClearInventory()
     {
@@ -125,16 +127,35 @@ public partial class MainWindow : Window
         var user = await Use<IAuthenticationService, AuthenticatedUser?>(s => s.AuthenticateAsync(Username.Text.Trim(), password));
         password = string.Empty;
         if (user is null) throw new InputException("اسم المستخدم أو كلمة المرور غير صحيحة.");
-        var workspace = await Use<IAccountingWorkspaceService, AccountingWorkspace>(s => s.LoadAsync(user.UserId, null));
-        actorId = user.UserId; BranchBox.ItemsSource = workspace.Branches; BranchBox.SelectedIndex = workspace.Branches.Count > 0 ? 0 : -1;
+        try
+        {
+            var workspace = await Use<IAccountingWorkspaceService, AccountingWorkspace>(s => s.LoadAsync(user.UserId, null));
+            BranchBox.ItemsSource = workspace.Branches;
+            administrationOnly = false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            BranchBox.ItemsSource = await Use<IAdministrationAccess, IReadOnlyList<AdministrationBranch>>(s => s.BranchesAsync(user.UserId));
+            administrationOnly = true;
+        }
+        foreach (var tab in WorkTabs.Items.OfType<TabItem>())
+            tab.Visibility = !administrationOnly || tab == AdministrationTab ? Visibility.Visible : Visibility.Collapsed;
+        WorkTabs.SelectedIndex = administrationOnly ? WorkTabs.Items.IndexOf(AdministrationTab) : 0;
+        actorId = user.UserId;
+        BranchBox.SelectedIndex = BranchBox.Items.Count > 0 ? 0 : -1;
         LoginPanel.Visibility = Visibility.Collapsed; WorkspacePanel.Visibility = Visibility.Visible; LogoutButton.Visibility = Visibility.Visible;
         UserLabel.Text = user.UserName;
+        if (administrationOnly)
+        {
+            StatusText.Text = BranchBox.SelectedValue is int ? "اختر الفرع ثم افتح إدارة المراجع والصلاحيات." : "لا يوجد فرع متاح لهذا المستخدم.";
+            return;
+        }
         if (BranchBox.SelectedValue is int) await LoadBranch();
         StatusText.Text = "تم الدخول. اختر مستندًا لفتحه أو أنشئ مستندًا جديدًا.";
     });
     private void Logout_Click(object sender, RoutedEventArgs e)
     {
-        if (busy || !ConfirmDiscard()) return;
+        if (busy || (!administrationOnly && !ConfirmDiscard())) return;
         ClearInventory();
         actorId = null; current = null; Accounts.Clear(); lines.Clear(); DocumentList.ItemsSource = null; BranchBox.ItemsSource = null;
         baseCurrencyId = null; sourceKey = Guid.NewGuid(); UserLabel.Text = ""; Password.Clear();
@@ -155,7 +176,7 @@ public partial class MainWindow : Window
     }
     private async void Branch_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (busy || actorId is null || BranchBox.SelectedValue is not int) return;
+        if (busy || administrationOnly || actorId is null || BranchBox.SelectedValue is not int) return;
         await Run(async () => { ResetEditor(); page = 0; await LoadBranch(); StatusText.Text = "تم تحميل مستندات الفرع."; });
     }
     private async Task RefreshList() => DocumentList.ItemsSource = (await Use<IJournalDocumentService, IReadOnlyList<JournalDocument>>(s => s.ListAsync(Actor, Branch, page))).Select(d => new DocumentItem(d)).ToArray();

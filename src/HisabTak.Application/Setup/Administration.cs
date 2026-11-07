@@ -7,6 +7,11 @@ public sealed record DirectoryRow(int Id, string Name, bool Hidden, byte[] Versi
 {
     public string State => Hidden ? "مخفي" : "ظاهر";
 }
+public sealed record AdministrationBranch(int Id, string Label);
+public interface IAdministrationAccess
+{
+    Task<IReadOnlyList<AdministrationBranch>> BranchesAsync(int actor);
+}
 public interface IReferenceDirectory
 {
     Task<IReadOnlyList<DirectoryRow>> ListAsync(int actor, int branch, DirectoryKind kind);
