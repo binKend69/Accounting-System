@@ -67,6 +67,18 @@ internal static class AdministrationSmoke
             name.Text = "P08 department";
             await Press("CreateButton");
             Check(grid.Items.OfType<DirectoryRow>().Any(x => x.Name == "P08 department"), "Department create failed.");
+            Field<ComboBox>("Kind").SelectedIndex = (int)DirectoryKind.Location;
+            await Ready(admin);
+            Check(Field<ComboBox>("LocationWarehouse").SelectedItem is not null, "Location parent not loaded.");
+            name.Text = "P08 shelf";
+            await Press("CreateButton");
+            search.Text = "P08 shelf";
+            grid.SelectedIndex = 0;
+            Check(grid.SelectedItem is DirectoryRow, "Location not saved under selected warehouse.");
+            await Press("HideButton");
+            grid.SelectedIndex = 0;
+            await Press("RestoreButton");
+            Check(grid.Items.OfType<DirectoryRow>().Single() is { Hidden: false }, "Location restore failed.");
             foreach (var (key, modifiers) in new[] { (Key.F, ModifierKeys.Control), (Key.F5, ModifierKeys.None) })
             {
                 var binding = admin.InputBindings.OfType<KeyBinding>().Single(x => x.Key == key && x.Modifiers == modifiers);
@@ -154,6 +166,10 @@ internal static class AdministrationSmoke
     {
         var button = (Button)window.FindName(name);
         Check(button.IsEnabled && button.IsVisible, name + " unavailable");
+        window.UpdateLayout();
+        var center = button.TranslatePoint(new Point(button.ActualWidth / 2, button.ActualHeight / 2), window);
+        var target = window.InputHitTest(center) as DependencyObject;
+        Check(target == button || (target is not null && button.IsAncestorOf(target)), name + " is covered or clipped.");
         var peer = new ButtonAutomationPeer(button);
         ((IInvokeProvider)peer.GetPattern(PatternInterface.Invoke)!).Invoke();
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);

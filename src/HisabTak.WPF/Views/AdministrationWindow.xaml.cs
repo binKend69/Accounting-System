@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using HisabTak.Application.Setup;
+using HisabTak.Application.Inventory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +17,7 @@ public partial class AdministrationWindow : Window
     private IReadOnlyList<PermissionChoice> grants = [];
     private IReadOnlyList<PermissionChoice> roleGrants = [];
     private bool busy;
-    private DirectoryKind CurrentKind => Kind.SelectedIndex == 0 ? DirectoryKind.Center : DirectoryKind.Department;
+    private DirectoryKind CurrentKind => (DirectoryKind)Kind.SelectedIndex;
 
     public AdministrationWindow(IServiceScopeFactory scopes, int actor, int branch)
     {
@@ -42,6 +43,7 @@ public partial class AdministrationWindow : Window
         }
         catch (UnauthorizedAccessException) { Status.Text = "لا تملك صلاحية هذه العملية أو الوصول إلى السجل."; }
         catch (ArgumentException) { Status.Text = "أدخل اسمًا صالحًا واختر السجل المطلوب."; }
+        catch (InvalidOperationException ex) when (ex.Message == "This name is already reserved in its scope.") { Status.Text = "الاسم محجوز لسجل ظاهر أو مخفي."; }
         catch (DirectoryConflictException ex) { Status.Text = ex.Message; }
         catch (Exception ex)
         {
@@ -62,11 +64,25 @@ public partial class AdministrationWindow : Window
         Permissions.ItemsSource = grants.Where(x => Match(x.Name) || Match(x.Module)).ToArray();
     }
 
-    private async Task LoadRows(IServiceProvider services)
+    private async Task LoadRows(IServiceProvider services, bool refreshWarehouses = true)
     {
         rows = [];
         Filter();
-        rows = await services.GetRequiredService<IReferenceDirectory>().ListAsync(actor, branch, CurrentKind);
+        var location = CurrentKind == DirectoryKind.Location;
+        LocationWarehouse.Visibility = location ? Visibility.Visible : Visibility.Collapsed;
+        if (location && refreshWarehouses)
+        {
+            var selected = LocationWarehouse.SelectedValue;
+            LocationWarehouse.ItemsSource = null;
+            var setup = await services.GetRequiredService<IInventorySetupService>().LoadAsync(actor, branch);
+            LocationWarehouse.ItemsSource = setup.Warehouses;
+            LocationWarehouse.SelectedValue = selected;
+            if (LocationWarehouse.SelectedIndex < 0 && setup.Warehouses.Count > 0) LocationWarehouse.SelectedIndex = 0;
+        }
+        if (location && LocationWarehouse.SelectedIndex < 0)
+            throw new DirectoryConflictException("أضف مستودعًا نشطًا للفرع قبل إضافة مواقع التخزين.");
+        rows = await services.GetRequiredService<IReferenceDirectory>().ListAsync(actor, branch, CurrentKind,
+            location ? LocationWarehouse.SelectedValue as int? : null);
         Filter();
     }
     private async Task LoadAccess(IServiceProvider services)
@@ -133,6 +149,10 @@ public partial class AdministrationWindow : Window
     {
         if (IsLoaded) await Refresh();
     }
+    private async void Warehouse_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && !busy) await Run(services => LoadRows(services, false));
+    }
     private async void User_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (IsLoaded && !busy) await Run(LoadAccess);
@@ -152,7 +172,8 @@ public partial class AdministrationWindow : Window
     {
         var row = Records.SelectedItem as DirectoryRow;
         if (action != DirectoryAction.Create && row is null) throw new ArgumentException();
-        await services.GetRequiredService<IReferenceDirectory>().ApplyAsync(actor, branch, CurrentKind, action, row, EntryName.Text);
+        await services.GetRequiredService<IReferenceDirectory>().ApplyAsync(actor, branch, CurrentKind, action, row, EntryName.Text,
+            CurrentKind == DirectoryKind.Location ? LocationWarehouse.SelectedValue as int? : null);
         EntryName.Clear();
         await LoadRows(services);
     });

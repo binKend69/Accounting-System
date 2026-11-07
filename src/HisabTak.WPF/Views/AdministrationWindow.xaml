@@ -26,7 +26,8 @@
         <TabControl Name="Tabs" SelectionChanged="Tab_Changed">
             <TabItem Name="ReferencesTab" Header="البيانات المرجعية"><DockPanel Margin="8">
                 <WrapPanel DockPanel.Dock="Top"><Label Target="{Binding ElementName=Kind}" Content="القائمة"/>
-                    <ComboBox Name="Kind" SelectedIndex="0" SelectionChanged="Kind_Changed"><ComboBoxItem Content="مراكز الفرع"/><ComboBoxItem Content="أقسام المنشأة"/></ComboBox>
+                    <ComboBox Name="Kind" SelectedIndex="0" SelectionChanged="Kind_Changed"><ComboBoxItem Content="مراكز الفرع"/><ComboBoxItem Content="أقسام المنشأة"/><ComboBoxItem Content="وحدات القياس"/><ComboBoxItem Content="مستودعات الفرع"/><ComboBoxItem Content="مواقع التخزين"/></ComboBox>
+                    <ComboBox Name="LocationWarehouse" Visibility="Collapsed" DisplayMemberPath="Name" SelectedValuePath="Id" AutomationProperties.Name="مستودع موقع التخزين" SelectionChanged="Warehouse_Changed"/>
                     <CheckBox Name="IncludeHidden" Content="عرض المخفي" VerticalAlignment="Center" Click="Filter_Changed"/>
                 </WrapPanel>
                 <StackPanel DockPanel.Dock="Bottom"><WrapPanel><Label Target="{Binding ElementName=EntryName}" Content="الاسم"/><TextBox Name="EntryName" MaxLength="100" Margin="4" Width="250" AutomationProperties.Name="اسم السجل"/></WrapPanel>

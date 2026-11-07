@@ -46,7 +46,8 @@ internal sealed class SecurityDirectory(HisabTakDbContext db, IAuthorizationServ
         await DemandRoleAdmin(actor);
         if (!await db.Roles.AnyAsync(x => x.Id == role && x.IsActive)) throw new UnauthorizedAccessException();
         return await db.Permissions.Where(x => x.IsActive && x.ParentPermissionId != null)
-            .OrderBy(x => x.Module).ThenBy(x => x.NameAr).Select(x => new PermissionChoice(x.Id, x.NameAr, x.Module,
+            .OrderBy(x => x.Module).ThenBy(x => x.NameAr).Select(x => new PermissionChoice(x.Id, x.NameAr,
+                db.Permissions.Where(parent => parent.Id == x.ParentPermissionId).Select(parent => parent.NameAr).FirstOrDefault() ?? x.Module,
                 db.RolePermissions.Any(r => r.RoleId == role && r.PermissionId == x.Id), false)).ToListAsync();
     }
 
@@ -79,7 +80,8 @@ internal sealed class SecurityDirectory(HisabTakDbContext db, IAuthorizationServ
         var memberships = await db.Roles.Where(x => x.IsActive).OrderBy(x => x.NameAr)
             .Select(x => new RoleChoice(x.Id, x.NameAr, roles.Contains(x.Id))).ToListAsync();
         var permissions = await db.Permissions.Where(x => x.IsActive && x.ParentPermissionId != null)
-            .OrderBy(x => x.Module).ThenBy(x => x.NameAr).Select(x => new PermissionChoice(x.Id, x.NameAr, x.Module,
+            .OrderBy(x => x.Module).ThenBy(x => x.NameAr).Select(x => new PermissionChoice(x.Id, x.NameAr,
+                db.Permissions.Where(parent => parent.Id == x.ParentPermissionId).Select(parent => parent.NameAr).FirstOrDefault() ?? x.Module,
                 db.UserPermissions.Any(p => p.UserId == user && p.PermissionId == x.Id),
                 db.RolePermissions.Any(p => roles.Contains(p.RoleId) && p.PermissionId == x.Id))).ToListAsync();
         return new(memberships, permissions);

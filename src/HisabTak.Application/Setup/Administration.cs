@@ -1,7 +1,7 @@
 namespace HisabTak.Application.Setup;
 
 public sealed class DirectoryConflictException(string message) : InvalidOperationException(message) { }
-public enum DirectoryKind { Center, Department }
+public enum DirectoryKind { Center, Department, Unit, Warehouse, Location }
 public enum DirectoryAction { Create, Rename, Hide, Restore }
 public sealed record DirectoryRow(int Id, string Name, bool Hidden, byte[] Version)
 {
@@ -14,8 +14,8 @@ public interface IAdministrationAccess
 }
 public interface IReferenceDirectory
 {
-    Task<IReadOnlyList<DirectoryRow>> ListAsync(int actor, int branch, DirectoryKind kind);
-    Task ApplyAsync(int actor, int branch, DirectoryKind kind, DirectoryAction action, DirectoryRow? original, string name);
+    Task<IReadOnlyList<DirectoryRow>> ListAsync(int actor, int branch, DirectoryKind kind, int? warehouse = null);
+    Task ApplyAsync(int actor, int branch, DirectoryKind kind, DirectoryAction action, DirectoryRow? original, string name, int? warehouse = null);
 }
 
 public sealed record SecuritySubject(int Id, string Name);
