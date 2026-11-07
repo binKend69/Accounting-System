@@ -1,6 +1,10 @@
-bin/
-obj/
-publish/
+**/bin/
+**/obj/
+**/TestResults/
 .vs/
+.idea/
 *.user
-TestResults/
+*.suo
+**/appsettings.local.json
+artifacts/
+publish/

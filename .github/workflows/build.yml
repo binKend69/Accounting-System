@@ -1,0 +1,85 @@
+name: Foundation build and tests
+
+on:
+  push:
+    branches: [Feature-account-system]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore HisabTak.slnx --locked-mode
+      - run: dotnet build HisabTak.slnx --no-restore --configuration Release -m:1 -nr:false
+      - run: dotnet test HisabTak.slnx --no-build --no-restore --configuration Release --logger trx
+      - name: Windows WPF smoke
+        timeout-minutes: 3
+        if: runner.os == 'Windows'
+        run: dotnet run --project eng/WpfSmoke/WpfSmoke.csproj --configuration Release
+      - name: Prepare Windows SQL for real UI acceptance
+        timeout-minutes: 12
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./eng/start-windows-sql.ps1
+      - name: Windows WPF with real SQL
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: dotnet run --project eng/WpfSmoke/WpfSmoke.csproj --configuration Release -- --sql
+      - name: Package Windows review build
+        if: runner.os == 'Windows'
+        run: dotnet publish src/HisabTak.WPF/HisabTak.WPF.csproj --configuration Release --no-restore --output artifacts/windows-preview
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: HisabTak-Windows-preview
+          path: artifacts/windows-preview/
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows'
+        with:
+          name: wpf-smoke-screenshots
+          path: artifacts/wpf-smoke/*.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: tests/**/TestResults/*.trx
+
+  sql-integration:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore HisabTak.slnx --locked-mode
+      - run: dotnet build HisabTak.slnx --no-restore --configuration Release -m:1 -nr:false
+      - run: python3 eng/sql-test-server.py start --runtime-file "$RUNNER_TEMP/hisabtak-sql.json"
+      - run: python3 eng/run-sql-tests.py "$RUNNER_TEMP/hisabtak-sql.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sql-integration-results
+          path: tests/HisabTak.Infrastructure.Tests/TestResults/sql-integration.trx
+      - if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/hisabtak-sql.json" ]; then
+            python3 eng/sql-test-server.py stop --runtime-file "$RUNNER_TEMP/hisabtak-sql.json"
+          fi
