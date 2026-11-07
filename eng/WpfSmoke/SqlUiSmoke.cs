@@ -104,6 +104,7 @@ internal static class SqlUiSmoke
             Check(((TextBlock)limited.FindName("Status")).Text.Contains("لا تملك صلاحية"),"Read-only UI did not show permission rejection.");
             Check((await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(x=>x.ListAsync(actor,setup.Branch))).Count==4,"Denied UI save wrote a document.");
             limited.Close();
+            await AdministrationSmoke.Run(services, actor, reader, setup.Branch);
             Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection. Confirmation dialogs use a test adapter; services and SQL are real.");
         }
         finally

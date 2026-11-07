@@ -80,6 +80,11 @@ public partial class MainWindow : Window
         UpdateButtons();
         Closing += (_, e) => { if (busy || (actorId is not null && !ConfirmDiscard())) e.Cancel = true; };
     }
+    private void Administration_Click(object sender, RoutedEventArgs e)
+    {
+        if (!busy && actorId is int actor && BranchBox.SelectedValue is int branch)
+            new AdministrationWindow(scopes, actor, branch) { Owner = this }.ShowDialog();
+    }
     private int Actor => actorId ?? throw new InputException("سجل الدخول أولاً.");
     private int Branch => BranchBox.SelectedValue is int id ? id : throw new InputException("اختر الفرع أولاً.");
     private static int Selected(ComboBox box) => box.SelectedValue is int id ? id : throw new InputException("أكمل الاختيارات المطلوبة.");

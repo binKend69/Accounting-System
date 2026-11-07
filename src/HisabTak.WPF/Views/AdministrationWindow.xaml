@@ -1,0 +1,59 @@
+<Window x:Class="HisabTak.WPF.Views.AdministrationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="المراجع والصلاحيات" Language="ar-YE" FlowDirection="RightToLeft"
+        WindowStartupLocation="CenterOwner" Width="830" Height="630" MinWidth="660" MinHeight="480">
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Find" Executed="Find_Executed"/>
+        <CommandBinding Command="NavigationCommands.Refresh" Executed="Refresh_Executed"/>
+    </Window.CommandBindings>
+    <Window.InputBindings>
+        <KeyBinding Key="F5" Command="NavigationCommands.Refresh"/>
+        <KeyBinding Key="F" Modifiers="Control" Command="ApplicationCommands.Find"/>
+    </Window.InputBindings>
+    <Window.Resources>
+        <Style TargetType="Button"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="12,6"/></Style>
+        <Style TargetType="ComboBox"><Setter Property="Margin" Value="4"/><Setter Property="MinWidth" Value="140"/></Style>
+        <Style TargetType="DataGrid"><Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="IsReadOnly" Value="True"/><Setter Property="SelectionMode" Value="Single"/><Setter Property="CanUserAddRows" Value="False"/></Style>
+    </Window.Resources>
+    <DockPanel Margin="16">
+        <TextBlock DockPanel.Dock="Bottom" x:Name="Status" Margin="4,10" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Label Target="{Binding ElementName=Search}" Content="بحث"/><TextBox Name="Search" Width="220" Margin="4" TextChanged="Filter_Changed" AutomationProperties.Name="بحث في القائمة"/>
+            <Button Command="ApplicationCommands.Find" Content="انتقال للبحث (Ctrl+F)"/>
+            <Button x:Name="RefreshButton" Command="NavigationCommands.Refresh" Content="تحديث (F5)"/>
+        </WrapPanel>
+        <TabControl Name="Tabs" SelectionChanged="Tab_Changed">
+            <TabItem Name="ReferencesTab" Header="البيانات المرجعية"><DockPanel Margin="8">
+                <WrapPanel DockPanel.Dock="Top"><Label Target="{Binding ElementName=Kind}" Content="القائمة"/>
+                    <ComboBox Name="Kind" SelectedIndex="0" SelectionChanged="Kind_Changed"><ComboBoxItem Content="مراكز الفرع"/><ComboBoxItem Content="أقسام المنشأة"/></ComboBox>
+                    <CheckBox Name="IncludeHidden" Content="عرض المخفي" VerticalAlignment="Center" Click="Filter_Changed"/>
+                </WrapPanel>
+                <StackPanel DockPanel.Dock="Bottom"><WrapPanel><Label Target="{Binding ElementName=EntryName}" Content="الاسم"/><TextBox Name="EntryName" MaxLength="100" Margin="4" Width="250" AutomationProperties.Name="اسم السجل"/></WrapPanel>
+                    <WrapPanel><Button Name="CreateButton" Content="إضافة" Click="Create_Click"/><Button Name="RenameButton" Content="تعديل المحدد" Click="Rename_Click"/>
+                        <Button Name="HideButton" Content="إخفاء المحدد" Click="Hide_Click"/><Button Name="RestoreButton" Content="استعادة المحدد" Click="Restore_Click"/></WrapPanel>
+                </StackPanel>
+                <DataGrid Name="Records" SelectionChanged="Record_Changed" AutomationProperties.Name="السجلات المرجعية"><DataGrid.Columns>
+                    <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="الحالة" Binding="{Binding State}" Width="120"/>
+                </DataGrid.Columns></DataGrid>
+            </DockPanel></TabItem>
+            <TabItem Name="SecurityTab" Header="صلاحيات المستخدم"><DockPanel Margin="8">
+                <WrapPanel DockPanel.Dock="Top"><Label Content="المستخدم" Target="{Binding ElementName=Users}"/><ComboBox Name="Users" DisplayMemberPath="Name" SelectionChanged="User_Changed"/></WrapPanel>
+                <WrapPanel DockPanel.Dock="Top"><Label Content="الدور" Target="{Binding ElementName=Roles}"/><ComboBox Name="Roles">
+                    <ComboBox.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding Name}"/><CheckBox IsChecked="{Binding Assigned,Mode=OneWay}" IsHitTestVisible="False" Focusable="False" Margin="6,0"/></StackPanel></DataTemplate></ComboBox.ItemTemplate>
+                </ComboBox><Button Name="AssignRoleButton" Content="إسناد الدور" Click="Assign_Click"/><Button Name="RemoveRoleButton" Content="إزالة الدور" Click="Remove_Click"/></WrapPanel>
+                <WrapPanel DockPanel.Dock="Bottom"><Button Name="GrantButton" Content="منح صلاحية مباشرة" Click="Grant_Click"/><Button Name="RevokeButton" Content="سحب المنح المباشر" Click="Revoke_Click"/></WrapPanel>
+                <DataGrid Name="Permissions" AutomationProperties.Name="صلاحيات المستخدم"><DataGrid.Columns>
+                    <DataGridTextColumn Header="المجموعة" Binding="{Binding Module}" Width="130"/><DataGridTextColumn Header="الصلاحية" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="مصدر الصلاحية" Binding="{Binding Source}" Width="150"/>
+                </DataGrid.Columns></DataGrid>
+            </DockPanel></TabItem>
+            <TabItem Name="RoleTab" Header="صلاحيات الأدوار"><DockPanel Margin="8">
+                <WrapPanel DockPanel.Dock="Top"><Label Content="الدور" Target="{Binding ElementName=RoleList}"/><ComboBox Name="RoleList" DisplayMemberPath="Name" SelectionChanged="Role_Changed"/></WrapPanel>
+                <WrapPanel DockPanel.Dock="Bottom"><Button Name="RoleGrantButton" Content="منح للدور" Click="RoleGrant_Click"/><Button Name="RoleRevokeButton" Content="سحب من الدور" Click="RoleRevoke_Click"/></WrapPanel>
+                <DataGrid Name="RolePermissions" AutomationProperties.Name="صلاحيات الدور"><DataGrid.Columns>
+                    <DataGridTextColumn Header="المجموعة" Binding="{Binding Module}" Width="130"/><DataGridTextColumn Header="الصلاحية" Binding="{Binding Name}" Width="*"/><DataGridCheckBoxColumn Header="ممنوحة للدور" Binding="{Binding Granted,Mode=OneWay}" Width="120"/>
+                </DataGrid.Columns></DataGrid>
+            </DockPanel></TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
