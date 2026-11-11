@@ -226,7 +226,7 @@ public partial class StockWindow : Window
         InvoiceCurrency.SelectedValue=currency;InvoiceRate.Text="1";Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
     }
     private async void AddLine(object sender,RoutedEventArgs e)=>await Run(()=> {
-        if(!SaveButton.IsEnabled)return Task.CompletedTask;
+        if(current is { State: not 1 } or { ConvertedInvoiceId: not null })return Task.CompletedTask;
         var line=new StockLine(Id(Item),Id(Unit),Number(Quantity),Number(Price),Number(Discount),Batch.SelectedValue is long b && b>0?b:null,
             string.IsNullOrWhiteSpace(Reason.Text)?null:Reason.Text.Trim(),Id(Kind) is not (4 or 5) || string.IsNullOrWhiteSpace(Original.Text)?null:long.Parse(Original.Text,CultureInfo.InvariantCulture));
         rows.Add(new(line,Product(line.ProductId),UnitName(line.UnitId)));return Task.CompletedTask;
