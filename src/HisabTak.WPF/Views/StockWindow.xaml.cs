@@ -242,7 +242,7 @@ public partial class StockWindow : Window
         var saved=await Use(s=>s.GetAsync(actor,current.Id));var d=saved.Draft;
         var page=new FlowDocument {FlowDirection=FlowDirection.RightToLeft,FontFamily=FontFamily,FontSize=15};
         void Row(string text)=>page.Blocks.Add(new Paragraph(new Run(text)));
-        Row(Kinds.Single(k=>k.Id==(int)d.Kind).Label+" · "+(saved.Number?.ToString()??$"سجل {d.Id}"));
+        Row(Kinds.Single(k=>k.Id==(int)d.Kind).Label+" · "+(saved.Number?.ToString()??$"سجل {saved.Id}"));
         if (saved.OriginIntentId is long origin) Row($"المستند الأصلي رقم {origin}");
         if (saved.ConvertedInvoiceId is long child) Row($"الفاتورة المرتبطة رقم السجل {child}");
         Row($"الفرع {branch} · {d.Date:yyyy-MM-dd} · {(saved.State==1?"مسودة":saved.State==2?"مرحل":"معكوس")} · العملة {d.CurrencyId}");
