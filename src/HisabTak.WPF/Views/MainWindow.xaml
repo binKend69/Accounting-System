@@ -8,6 +8,19 @@
         <Style TargetType="Button"><Setter Property="Padding" Value="16,9"/><Setter Property="Margin" Value="4"/><Setter Property="Background" Value="#E5EDF4"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/></Style>
         <Style TargetType="TextBox"><Setter Property="Padding" Value="8"/><Setter Property="Margin" Value="4"/><Setter Property="MinWidth" Value="110"/></Style>
         <Style TargetType="ComboBox"><Setter Property="Margin" Value="4"/><Setter Property="Padding" Value="6"/><Setter Property="MinWidth" Value="150"/></Style>
+        <Style x:Key="HomeAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="132"/>
+            <Setter Property="Height" Value="108"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="ContentTemplate">
+                <Setter.Value><DataTemplate><StackPanel>
+                    <Border Width="50" Height="50" CornerRadius="25" Background="#E8EFF4" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}}" FontFamily="Segoe MDL2 Assets" FontSize="24" Foreground="#284A63" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="{Binding}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel></DataTemplate></Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid Margin="24">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -27,7 +40,31 @@
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12"><TextBlock Text="الفرع" VerticalAlignment="Center"/><ComboBox x:Name="BranchBox" Width="260" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="Branch_Changed"/><TextBlock x:Name="UserLabel" VerticalAlignment="Center" Margin="20,0"/></StackPanel>
             <TabControl Name="WorkTabs" Grid.Row="1" Background="White" BorderThickness="0" Padding="16">
-                <TabItem Header="المستندات">
+                <TabItem x:Name="HomeTab" Header="الرئيسية">
+                    <DockPanel Margin="10">
+                        <Border DockPanel.Dock="Left" Background="#30485D" Width="175" Padding="16">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectedItem.Label, ElementName=BranchBox}" Foreground="White" TextWrapping="Wrap" FontSize="18"/>
+                                <TextBlock Text="{Binding Text, ElementName=UserLabel}" Foreground="White" Margin="0,8"/>
+                            </StackPanel>
+                        </Border>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <WrapPanel Margin="12">
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE8C7;" CommandParameter="PAYMENT_VOUCHER" Content="سند صرف" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE8C7;" CommandParameter="RECEIPT_VOUCHER" Content="سند قبض" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE7BF;" CommandParameter="Purchase" Content="فاتورة شراء" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE8A5;" CommandParameter="Sale" Content="فاتورة بيع" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE8EF;" CommandParameter="accounts" Content="الحسابات" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE8FD;" CommandParameter="products" Content="الأصناف" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE7A7;" CommandParameter="PurchaseReturn" Content="مردود شراء" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE7A6;" CommandParameter="SalesReturn" Content="مردود بيع" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE9F9;" CommandParameter="balances" Content="أرصدة المخزون" Click="HomeAction_Click"/>
+                                <Button x:Name="HomeJournalButton" Style="{StaticResource HomeAction}" Tag="&#xE70F;" CommandParameter="JOURNAL_VOUCHER" Content="سند قيد" Click="HomeAction_Click"/>
+                            </WrapPanel>
+                        </ScrollViewer>
+                    </DockPanel>
+                </TabItem>
+                <TabItem x:Name="DocumentsTab" Header="المستندات">
                     <Grid Margin="8"><Grid.ColumnDefinitions><ColumnDefinition Width="320"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <Grid Margin="0,0,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <StackPanel Orientation="Horizontal"><Button Content="تحديث القائمة" Click="Refresh_Click"/><Button Content="مستند جديد" Click="New_Click"/></StackPanel>
@@ -54,7 +91,7 @@
                 </TabItem>
                 <TabItem Name="AdministrationTab" Header="الإدارة"><Button Content="إدارة المراجع والصلاحيات" Click="Administration_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"/></TabItem>
                 <TabItem Header="المبيعات والمخزون"><StackPanel Margin="24" HorizontalAlignment="Right"><TextBlock Text="فواتير الفرع وحركة المخزون" FontSize="22"/><Button Content="فتح المبيعات والمشتريات والمخزون" Click="StockWindow_Click" Margin="0,12"/></StackPanel></TabItem>
-                <TabItem Header="الحسابات والإعداد المالي"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
+                <TabItem x:Name="AccountsTab" Header="الحسابات والإعداد المالي"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
                     <TextBlock Text="إنشاء حساب للفرع المحدد" FontSize="22" Margin="0,0,0,12"/>
                     <WrapPanel><TextBox x:Name="AccountCode" Width="160" ToolTip="رمز الحساب" AutomationProperties.Name="رمز الحساب"/><TextBox x:Name="AccountName" Width="260" ToolTip="اسم الحساب" AutomationProperties.Name="اسم الحساب"/></WrapPanel>
                     <WrapPanel><ComboBox x:Name="GroupBox" DisplayMemberPath="Label" SelectedValuePath="Id" ToolTip="مجموعة الحساب"/><ComboBox x:Name="CurrencyBox" DisplayMemberPath="Label" SelectedValuePath="Id" ToolTip="عملة الحساب"/><ComboBox x:Name="NatureBox" SelectedIndex="0"><ComboBoxItem Content="طبيعة مدينة" Tag="1"/><ComboBoxItem Content="طبيعة دائنة" Tag="2"/></ComboBox></WrapPanel>

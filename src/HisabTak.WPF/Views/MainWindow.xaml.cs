@@ -28,11 +28,39 @@ public partial class MainWindow : Window
         inventoryLocations = []; UnitList.ItemsSource = null; WarehouseBox.ItemsSource = null;
         LocationList.ItemsSource = null; InventoryNameBox.Clear();
     }
-    private async void StockWindow_Click(object sender,RoutedEventArgs e) => await Run(async () =>
+    private async void StockWindow_Click(object sender,RoutedEventArgs e) => await OpenStock();
+    private async void HomeAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { CommandParameter: string action } || busy || administrationOnly) return;
+        switch (action)
+        {
+            case "accounts":
+                WorkTabs.SelectedItem = AccountsTab;
+                return;
+            case "RECEIPT_VOUCHER":
+            case "PAYMENT_VOUCHER":
+            case "JOURNAL_VOUCHER":
+                if (!ConfirmDiscard()) return;
+                ResetEditor();
+                TypeBox.SelectedItem = TypeBox.Items.OfType<ComboBoxItem>().Single(item => Equals(item.Tag, action));
+                WorkTabs.SelectedItem = DocumentsTab;
+                DocumentTitle.Text = TypeName(action);
+                return;
+            default:
+                await OpenStock(action);
+                return;
+        }
+    }
+
+    private Task OpenStock(string? action = null) => Run(async () =>
     {
         if (baseCurrencyId is not int currency) throw new InputException("اختر عملة الأساس أولاً.");
         var window = new StockWindow(scopes, Actor, Branch, currency, Accounts.ToArray(), CurrencyBox.Items.Cast<AccountingLookup>().ToArray()) { Owner = this };
-        await window.LoadAsync(); window.ShowDialog();
+        await window.LoadAsync();
+        if (action == "products") window.Tabs.SelectedItem = window.ProductSetupTab;
+        else if (action == "balances") window.Tabs.SelectedItem = window.BalancesTab;
+        else if (Enum.TryParse<StockDocumentKind>(action, out var kind)) window.Kind.SelectedValue = (int)kind;
+        window.ShowDialog();
         StatusText.Text = "تم إغلاق مساحة المخزون.";
     });
     private async Task LoadInventory()
@@ -151,7 +179,7 @@ public partial class MainWindow : Window
             return;
         }
         if (BranchBox.SelectedValue is int) await LoadBranch();
-        StatusText.Text = "تم الدخول. اختر مستندًا لفتحه أو أنشئ مستندًا جديدًا.";
+        StatusText.Text = "تم الدخول. اختر العملية من الصفحة الرئيسية.";
     });
     private void Logout_Click(object sender, RoutedEventArgs e)
     {

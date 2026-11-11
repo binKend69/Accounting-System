@@ -68,6 +68,12 @@ internal static class Program
             return w;
         }
         var editor = OpenAuthenticated();
+        if (!((TabItem)editor.FindName("HomeTab")).IsSelected)
+            throw new InvalidOperationException("Home must open after login.");
+        Capture(editor, "workspace-home");
+        Click(editor, "HomeJournalButton");
+        if (!((TabItem)editor.FindName("DocumentsTab")).IsSelected)
+            throw new InvalidOperationException("Home journal shortcut did not open the document editor.");
         var rows = (ObservableCollection<MainWindow.EditorLine>)((DataGrid)editor.FindName("LinesGrid")).ItemsSource;
         rows.Add(new() { AccountId=1,Side="1",Amount="100.25",Rate="1" });
         rows.Add(new() { AccountId=2,Side="2",Amount="100.25",Rate="1" });
@@ -78,7 +84,7 @@ internal static class Program
             throw new InvalidOperationException("Saved draft actions are unavailable.");
         Capture(editor,"workspace-draft"); editor.Close();
         documents.MarkPosted();
-        var history = OpenAuthenticated(); ((ListBox)history.FindName("DocumentList")).SelectedIndex=0;
+        var history = OpenAuthenticated(); Click(history, "HomeJournalButton"); ((ListBox)history.FindName("DocumentList")).SelectedIndex=0;
         Click(history,"OpenDocumentButton");
         if (((DataGrid)history.FindName("LinesGrid")).IsEnabled || ((Button)history.FindName("SaveButton")).IsEnabled
             || ((Button)history.FindName("PostButton")).IsEnabled || !((Button)history.FindName("ReverseButton")).IsEnabled)
