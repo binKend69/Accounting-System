@@ -200,9 +200,13 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
     private const string MovementColumns="m.MovementId,m.DocumentId,m.LineNumber,m.ProductId,m.WarehouseId,m.BatchId,m.Quantity,m.Value,m.Net,m.Tax,m.OriginalMovementId,m.BilledQuantity";
     private async Task<StockDocument> Read(long id,CancellationToken ct)
     {
-        var header=(await Rows("SELECT Payload,Version,State,Number,JournalId,ReversalId FROM dbo.StockDocuments WHERE DocumentId=@i",
+        var header=(await Rows("""
+            SELECT Payload,Version,State,Number,JournalId,ReversalId,OriginIntentId,
+                (SELECT child.DocumentId FROM dbo.StockDocuments child WHERE child.OriginIntentId = parent.DocumentId)
+            FROM dbo.StockDocuments parent WHERE DocumentId=@i
+            """,
             r=>new StockDocument(id,JsonSerializer.Deserialize<StockDocumentDraft>(r.GetString(0))!,r.GetInt32(1),r.GetInt32(2),
-                r.IsDBNull(3)?null:r.GetInt64(3),r.IsDBNull(4)?null:r.GetInt64(4),r.IsDBNull(5)?null:r.GetInt64(5),[]),ct,("@i",id))).Single();
+                r.IsDBNull(3)?null:r.GetInt64(3),r.IsDBNull(4)?null:r.GetInt64(4),r.IsDBNull(5)?null:r.GetInt64(5),[]) { OriginIntentId = r.IsDBNull(6) ? null : r.GetInt64(6), ConvertedInvoiceId = r.IsDBNull(7) ? null : r.GetInt64(7) },ct,("@i",id))).Single();
         return header with { Movements=await Rows("SELECT "+MovementColumns+" FROM dbo.StockMovements m WHERE DocumentId=@i ORDER BY MovementId",Movement,ct,("@i",id)) };
     }
     private async Task Validate(int actor,StockDocumentDraft d,CancellationToken ct)
@@ -214,7 +218,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             (d.Kind==StockDocumentKind.Transfer)!=(d.TargetWarehouseId!=null) || d.TargetWarehouseId==d.WarehouseId)
             throw new ArgumentException("Invalid stock document.");
         bool returns=d.Kind is StockDocumentKind.SalesReturn or StockDocumentKind.PurchaseReturn;
-        bool trade=returns || d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Sale;
+        bool trade=IsIntent(d.Kind) || returns || d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Sale;
         if(!trade && (d.Credit || d.TaxEnabled) || d.TaxRate is <0 or >1 || !d.TaxEnabled && (d.TaxRate!=0 || d.PricesIncludeTax))
             throw new ArgumentException("Invalid tax or credit selection.");
         foreach(var l in d.Lines)
@@ -259,7 +263,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
     public Task<StockDocument> SaveAsync(int actor,StockDocumentDraft draft,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,() => SaveCore(actor,draft,ct));
 
-    private async Task<StockDocument> SaveCore(int actor,StockDocumentDraft draft,CancellationToken ct)
+    private async Task<StockDocument> SaveCore(int actor,StockDocumentDraft draft,CancellationToken ct, long? originIntentId = null)
     {
             draft=await ReturnHeader(actor,draft,ct);
             await Validate(actor,draft,ct);
@@ -272,8 +276,8 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
                 return existing;
             }
             await FreeSource(draft.SourceKey,ct);
-            id=await sql.ScalarAsync("INSERT dbo.StockDocuments(BranchId,SourceKey,Kind,EntryDate,Payload,CreatedBy) VALUES(@b,@k,@t,@d,@p,@a); SELECT CAST(SCOPE_IDENTITY() AS bigint)",
-                ct,("@b",draft.BranchId),("@k",draft.SourceKey),("@t",(int)draft.Kind),("@d",draft.Date),("@p",payload),("@a",actor));
+            id=await sql.ScalarAsync("INSERT dbo.StockDocuments(BranchId,SourceKey,Kind,EntryDate,Payload,CreatedBy,OriginIntentId) VALUES(@b,@k,@t,@d,@p,@a,@origin); SELECT CAST(SCOPE_IDENTITY() AS bigint)",
+                ct,("@b",draft.BranchId),("@k",draft.SourceKey),("@t",(int)draft.Kind),("@d",draft.Date),("@p",payload),("@a",actor),("@origin",originIntentId));
             await Audit(actor,"STOCK_DRAFT_SAVED","StockDocuments",id,ct);
             return await Read(id,ct);
     }
@@ -283,7 +287,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             draft=await ReturnHeader(actor,draft,ct);
             await Validate(actor,draft,ct);
             var old=await Read(id,ct);
-            if(old.State!=1 || old.Draft.BranchId!=draft.BranchId || old.Draft.SourceKey!=draft.SourceKey || old.Draft.Kind!=draft.Kind)
+            if(old.ConvertedInvoiceId.HasValue || old.State!=1 || old.Draft.BranchId!=draft.BranchId || old.Draft.SourceKey!=draft.SourceKey || old.Draft.Kind!=draft.Kind)
                 throw new InvalidOperationException("Document identity or posted history cannot change.");
             var payload=StockPayload.Encode(draft);
             if(old.Version==version+1 && StockPayload.Encode(old.Draft)==payload) return old;
@@ -291,6 +295,26 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET EntryDate=@d,Payload=@p,Version=Version+1 WHERE DocumentId=@i",ct,("@i",id),("@d",draft.Date),("@p",payload));
             await Audit(actor,"STOCK_DRAFT_UPDATED","StockDocuments",id,ct);
             return await Read(id,ct);
+        });
+    private static bool IsIntent(StockDocumentKind kind) =>
+        kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder;
+
+    public Task<StockDocument> ConvertIntentAsync(int actor, long id, int version, CancellationToken ct = default) =>
+        Write(actor, PermissionCodes.JournalPost, ct, async () =>
+        {
+            var intent = await Read(id, ct);
+            await Branch(actor, intent.Draft.BranchId, ct);
+            if (!IsIntent(intent.Draft.Kind) || intent.State != 1 || intent.Version != version)
+                throw new DocumentConflictException();
+            if (intent.ConvertedInvoiceId is long existing) return await Read(existing, ct);
+            var draft = intent.Draft with
+            {
+                SourceKey = Guid.NewGuid(),
+                Kind = intent.Draft.Kind == StockDocumentKind.SalesQuote ? StockDocumentKind.Sale : StockDocumentKind.Purchase
+            };
+            var invoice = await SaveCore(actor, draft, ct, id);
+            await Audit(actor, "TRADE_INTENT_CONVERTED", "StockDocuments", id, ct);
+            return invoice;
         });
     public async Task<StockDocument> GetAsync(int actor,long id,CancellationToken ct=default)
     {

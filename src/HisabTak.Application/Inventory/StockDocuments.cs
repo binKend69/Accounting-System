@@ -2,7 +2,7 @@ using HisabTak.Domain.Inventory;
 
 namespace HisabTak.Application.Inventory;
 
-public enum StockDocumentKind { Opening = 1, Purchase = 2, Sale = 3, PurchaseReturn = 4, SalesReturn = 5, Transfer = 6, Increase = 7, Decrease = 8 }
+public enum StockDocumentKind { Opening = 1, Purchase = 2, Sale = 3, PurchaseReturn = 4, SalesReturn = 5, Transfer = 6, Increase = 7, Decrease = 8, SalesQuote = 9, PurchaseOrder = 10 }
 public sealed record ProductDefinition(string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true);
 public sealed record ProductInfo(int Id, string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true);
 public sealed record ProductUnitInfo(int ProductId, int UnitId, decimal Factor);
@@ -17,7 +17,11 @@ public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, i
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
     long? BatchId, decimal Quantity, decimal Value, decimal Net, decimal Tax, long? OriginalMovementId, decimal? BilledQuantity = null);
 public sealed record StockDocument(long Id, StockDocumentDraft Draft, int Version, int State, long? Number,
-    long? JournalId, long? ReversalId, IReadOnlyList<StockMovement> Movements);
+    long? JournalId, long? ReversalId, IReadOnlyList<StockMovement> Movements)
+{
+    public long? OriginIntentId { get; init; }
+    public long? ConvertedInvoiceId { get; init; }
+}
 public sealed record StockBalance(int ProductId, int WarehouseId, decimal Quantity, decimal BookValue, decimal LastPurchasePrice);
 public sealed record DebtBalance(long DocumentId, int AccountId, int CurrencyId, bool Receivable,
     decimal OriginalAmount, decimal RemainingAmount, decimal OriginalBookValue, decimal RemainingBookValue);
@@ -55,6 +59,7 @@ public interface IStockDocumentService
     Task<IReadOnlyList<BatchInfo>> BatchesAsync(int actor, int branchId, int warehouseId, CancellationToken ct = default);
     Task<StockDocument> SaveAsync(int actor, StockDocumentDraft draft, CancellationToken ct = default);
     Task<StockDocument> UpdateAsync(int actor, long id, int version, StockDocumentDraft draft, CancellationToken ct = default);
+    Task<StockDocument> ConvertIntentAsync(int actor, long id, int version, CancellationToken ct = default);
     Task<StockDocument> PostAsync(int actor, long id, int version, CancellationToken ct = default);
     Task<StockDocument> ReverseAsync(int actor, long id, DateOnly date, Guid sourceKey, CancellationToken ct = default);
     Task<StockDocument> GetAsync(int actor, long id, CancellationToken ct = default);

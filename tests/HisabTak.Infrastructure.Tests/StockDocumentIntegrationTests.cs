@@ -40,6 +40,41 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
     [SqlServerFact]
+    public async Task Trade_intents_only_affect_stock_and_journals_when_the_linked_invoice_posts()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var store = await StoreAsync(test);
+        var actor = store.F.Owner;
+        Task<StockDocument> Run(Func<IStockDocumentService, Task<StockDocument>> action) =>
+            With<IStockDocumentService, StockDocument>(test, action);
+
+        foreach (var kind in new[] { StockDocumentKind.PurchaseOrder, StockDocumentKind.SalesQuote })
+        {
+            var buying = kind == StockDocumentKind.PurchaseOrder;
+            var draft = Draft(store, kind, store.Cash, new StockLine(store.Product, store.Unit, buying ? 10 : 2, buying ? 20 : 30));
+            var intent = await Run(service => service.SaveAsync(actor, draft));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Run(service => service.PostAsync(actor, intent.Id, intent.Version)));
+            Task<StockDocument> Convert() => Run(service => service.ConvertIntentAsync(actor, intent.Id, intent.Version));
+            var conversions = await Task.WhenAll(Convert(), Convert());
+            var invoice = conversions[0];
+            Assert.Equal(invoice.Id, conversions[1].Id);
+            Assert.Equal(intent.Id, invoice.OriginIntentId);
+            Assert.Equal(buying ? StockDocumentKind.Purchase : StockDocumentKind.Sale, invoice.Draft.Kind);
+            Assert.Equal(draft.Lines.ToArray(), invoice.Draft.Lines.ToArray());
+            Assert.Null(invoice.JournalId);
+            Assert.Empty(invoice.Movements);
+            var original = await Run(service => service.GetAsync(actor, intent.Id));
+            Assert.Equal(invoice.Id, original.ConvertedInvoiceId);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Run(service => service.UpdateAsync(actor, intent.Id, intent.Version, draft)));
+            Assert.Equal(buying ? 0m : 10m, (await Stock(test, store, Date)).Sum(row => row.Quantity));
+            Assert.Equal(buying ? 0 : 1, await Count(test, "JournalEntries"));
+            var posted = await Run(service => service.PostAsync(actor, invoice.Id, invoice.Version));
+            Assert.NotNull(posted.JournalId);
+            Assert.Equal(buying ? 10m : 8m, Assert.Single(await Stock(test, store, Date)).Quantity);
+        }
+    }
+
+    [SqlServerFact]
     public async Task Pos_slots_restore_and_concurrent_payment_posts_once()
     {
         await using var test = await SqlTestDatabase.CreateAsync();

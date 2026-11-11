@@ -85,7 +85,7 @@ public partial class StockWindow : Window
     private sealed record DocChoice(StockDocument Document,string Label);
     private sealed record BatchChoice(long Id,string Label);
     private sealed record BalanceRow(StockBalance Balance, string Product, string Warehouse, DateOnly AsOf);
-    private static readonly Choice[] Kinds=[new(1,"افتتاحي مخزون"),new(2,"شراء"),new(3,"بيع"),new(4,"مردود شراء"),new(5,"مردود بيع"),new(6,"تحويل مخزني"),new(7,"زيادة جرد"),new(8,"نقص جرد")];
+    private static readonly Choice[] Kinds=[new(1,"افتتاحي مخزون"),new(2,"شراء"),new(3,"بيع"),new(4,"مردود شراء"),new(5,"مردود بيع"),new(6,"تحويل مخزني"),new(7,"زيادة جرد"),new(8,"نقص جرد"),new(9,"عرض سعر"),new(10,"أمر شراء")];
     public StockWindow(IServiceScopeFactory scopes,int actor,int branch,int currency,AccountLookup[] accounts,AccountingLookup[]? currencies=null)
     {
         InitializeComponent(); this.scopes=scopes; this.actor=actor; this.branch=branch; this.currency=currency; this.accounts=accounts;this.currencies=currencies??[new(currency,currency.ToString())];
@@ -175,7 +175,7 @@ public partial class StockWindow : Window
     private async Task RefreshLists()
     {
         var docs=await Use(s=>s.ListAsync(actor,branch,page));
-        Documents.ItemsSource=docs.Select(d=>new DocChoice(d,$"{Kinds.Single(x=>x.Id==(int)d.Draft.Kind).Label} · {(d.Number?.ToString()??"مسودة")} · {d.Draft.Date:yyyy-MM-dd} · {(d.State==1?"مسودة":d.State==2?"مرحل":"معكوس")}")).ToArray();
+        Documents.ItemsSource=docs.Select(d=>new DocChoice(d,$"{Kinds.Single(x=>x.Id==(int)d.Draft.Kind).Label} · {(d.Number?.ToString()??$"سجل {d.Id}")} · {d.Draft.Date:yyyy-MM-dd} · {(d.ConvertedInvoiceId.HasValue?"محوّل":d.State==1?"مسودة":d.State==2?"مرحل":"معكوس")}")).ToArray();
         var balanceDate = Day(AsOf);
         var stock = await Use(s => s.BalancesAsync(actor, branch, balanceDate));
         Balances.ItemsSource = stock.Select(balance => new BalanceRow(balance, Product(balance.ProductId),
@@ -186,14 +186,14 @@ public partial class StockWindow : Window
     private StockDocumentDraft Build()
     {
         var kind=(StockDocumentKind)Id(Kind);
-        var trade=kind is StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
+        var trade=kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder or StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
         return new(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),trade?Id(Party):0,
             trade && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true);
     }
     private bool Dirty()
     {
         if(current==null)return rows.Count!=0;
-        if(current.State!=1)return false;
+        if(current.State!=1 || current.ConvertedInvoiceId.HasValue)return false;
         try{var d=Build();return (d with {Lines=current.Draft.Lines})!=current.Draft || !d.Lines.SequenceEqual(current.Draft.Lines);}
         catch(Exception){return true;}
     }
@@ -201,6 +201,12 @@ public partial class StockWindow : Window
     private void Buttons()
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
+        var intent = current?.Draft.Kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder;
+        ConvertButton.Visibility = intent ? Visibility.Visible : Visibility.Collapsed;
+        ConvertButton.Content = current?.ConvertedInvoiceId != null ? "فتح الفاتورة المرتبطة" : "تحويل إلى مسودة فاتورة";
+        PostButton.IsEnabled = current?.State == 1 && !intent;
+        if (current?.ConvertedInvoiceId != null) SaveButton.IsEnabled = false;
+        AddStockLineButton.IsEnabled = SaveButton.IsEnabled;
         foreach(var control in new Control[]{Warehouse,Target,Party,InvoiceCurrency,InvoiceRate,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
         Kind.IsEnabled=current==null && slotNumber == 0;
         if (slotNumber != 0) Credit.IsEnabled = false;
@@ -220,12 +226,12 @@ public partial class StockWindow : Window
         InvoiceCurrency.SelectedValue=currency;InvoiceRate.Text="1";Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
     }
     private async void AddLine(object sender,RoutedEventArgs e)=>await Run(()=> {
-        if(current?.State is 2 or 3)return Task.CompletedTask;
+        if(!SaveButton.IsEnabled)return Task.CompletedTask;
         var line=new StockLine(Id(Item),Id(Unit),Number(Quantity),Number(Price),Number(Discount),Batch.SelectedValue is long b && b>0?b:null,
             string.IsNullOrWhiteSpace(Reason.Text)?null:Reason.Text.Trim(),Id(Kind) is not (4 or 5) || string.IsNullOrWhiteSpace(Original.Text)?null:long.Parse(Original.Text,CultureInfo.InvariantCulture));
         rows.Add(new(line,Product(line.ProductId),UnitName(line.UnitId)));return Task.CompletedTask;
     });
-    private void RemoveLine(object sender,RoutedEventArgs e){if(current?.State is not (2 or 3) && Lines.SelectedItem is DisplayLine row)rows.Remove(row);}
+    private void RemoveLine(object sender,RoutedEventArgs e){if(SaveButton.IsEnabled && Lines.SelectedItem is DisplayLine row)rows.Remove(row);}
     private async void Save(object sender,RoutedEventArgs e)=>await Run(async()=>{
         var draft=Build();var doc=current==null?await Use(s=>s.SaveAsync(actor,draft)):await Use(s=>s.UpdateAsync(actor,current.Id,current.Version,draft));
         ShowDocument(doc);await RefreshLists();Status.Text="حفظت المسودة.";
@@ -236,7 +242,9 @@ public partial class StockWindow : Window
         var saved=await Use(s=>s.GetAsync(actor,current.Id));var d=saved.Draft;
         var page=new FlowDocument {FlowDirection=FlowDirection.RightToLeft,FontFamily=FontFamily,FontSize=15};
         void Row(string text)=>page.Blocks.Add(new Paragraph(new Run(text)));
-        Row(Kinds.Single(k=>k.Id==(int)d.Kind).Label+" · "+(saved.Number?.ToString()??"مسودة"));
+        Row(Kinds.Single(k=>k.Id==(int)d.Kind).Label+" · "+(saved.Number?.ToString()??$"سجل {d.Id}"));
+        if (saved.OriginIntentId is long origin) Row($"المستند الأصلي رقم {origin}");
+        if (saved.ConvertedInvoiceId is long child) Row($"الفاتورة المرتبطة رقم السجل {child}");
         Row($"الفرع {branch} · {d.Date:yyyy-MM-dd} · {(saved.State==1?"مسودة":saved.State==2?"مرحل":"معكوس")} · العملة {d.CurrencyId}");
         if(d.CounterpartyAccountId>0)Row("حساب الطرف · "+(accounts.FirstOrDefault(a=>a.Id==d.CounterpartyAccountId)?.Label??d.CounterpartyAccountId.ToString()));
         for(var i=0;i<d.Lines.Count;i++)
@@ -253,6 +261,17 @@ public partial class StockWindow : Window
         }
         new Window { Owner=this,Title="معاينة النسخة المحفوظة",Width=780,Height=640,Content=new FlowDocumentReader {Document=page} }.ShowDialog();
     });
+    private async void ConvertIntent(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        if (current == null || Dirty()) { Status.Text = "احفظ تعديلات المستند قبل التحويل."; return; }
+        var origin = current.Id;
+        if (current.ConvertedInvoiceId == null && !Confirm("إنشاء مسودة فاتورة مرتبطة وتثبيت المستند الأصلي؟")) return;
+        var invoice = await Use(s => s.ConvertIntentAsync(actor, origin, current.Version));
+        ShowDocument(invoice);
+        await RefreshLists();
+        Status.Text = $"فُتحت الفاتورة المرتبطة بالمستند {origin}.";
+    });
+
     private async void Post(object sender,RoutedEventArgs e)=>await Run(async()=>{
         if(current==null || Dirty()){Status.Text="احفظ التعديلات قبل الترحيل.";return;}
         if(!Confirm("ترحيل النسخة المحفوظة وإثبات آثارها؟"))return;

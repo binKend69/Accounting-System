@@ -175,6 +175,7 @@ public sealed partial class StockDocumentService
     {
             var doc=await Read(id,ct); var d=doc.Draft;
             await Branch(actor,d.BranchId,ct);
+            if (IsIntent(d.Kind)) throw new InvalidOperationException("Convert the intent to an invoice before posting.");
             if(doc.State!=1)
             {
                 if(version!=doc.Version-doc.State+1) throw new DocumentConflictException();
