@@ -19,7 +19,7 @@
  <WrapPanel x:Name="PosCommands" Visibility="Collapsed" DockPanel.Dock="Top">
    <Button Content="فاتورة ١" Tag="1" Click="SwitchPos"/><Button Content="فاتورة ٢" Tag="2" Click="SwitchPos"/>
    <Button Content="فاتورة ٣" Tag="3" Click="SwitchPos"/><Button Content="فاتورة ٤" Tag="4" Click="SwitchPos"/>
-   <Button Content="حفظ الخانة" Click="SavePos"/><Button Content="دفع وترحيل" Click="PayPos"/>
+   <Button Content="حفظ الخانة" Click="SavePos"/><Button x:Name="PayPosButton" Content="دفع وترحيل" Click="PayPos"/>
    <Button Content="طابعة الفاتورة" Click="ChooseReceiptPrinter"/><Button Content="طابعة المطبخ" Click="ChooseKitchenPrinter"/>
    <Button x:Name="ReprintReceipt" Content="إعادة طباعة الفاتورة" Click="RepeatReceipt"/><Button x:Name="ReprintKitchen" Content="إعادة تذكرة المطبخ" Click="RepeatKitchen"/>
    <Button Content="استعادة آخر حفظ" Click="ReloadPos"/>

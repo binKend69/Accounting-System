@@ -193,7 +193,8 @@ public partial class StockWindow : Window
     }
     private bool Dirty()
     {
-        if(current==null)return rows.Count!=0;
+        if(current==null)return rows.Count!=0 || Kind.SelectedValue is 11 &&
+            (Fees.Items.Count != 0 || OriginCountry.Text.Length != 0 || GoodsType.Text.Length != 0 || VehicleNumber.Text.Length != 0);
         if(current.State!=1 || current.ConvertedInvoiceId.HasValue)return false;
         try{var d=Build();return (d with {Lines=current.Draft.Lines, Customs=current.Draft.Customs})!=current.Draft || !SameDeclaration(d.Customs,current.Draft.Customs) || !d.Lines.SequenceEqual(current.Draft.Lines);}
         catch(Exception){return true;}
@@ -248,6 +249,14 @@ public partial class StockWindow : Window
         if (saved.OriginIntentId is long origin) Row($"المستند الأصلي رقم {origin}");
         if (saved.ConvertedInvoiceId is long child) Row($"الفاتورة المرتبطة رقم السجل {child}");
         Row($"الفرع {branch} · {d.Date:yyyy-MM-dd} · {(saved.State==1?"مسودة":saved.State==2?"مرحل":"معكوس")} · العملة {d.CurrencyId}");
+        if (d.Customs is {} declaration)
+        {
+            Row($"{(declaration.DeclarationType == 1 ? "استيراد" : "تصدير")} · بلد المنشأ {declaration.Country} · البضاعة {declaration.Goods}");
+            Row($"وسائل النقل {declaration.VehicleCount} · القاطرة {declaration.VehicleNumber}");
+            foreach (var fee in declaration.Charges)
+                Row($"رسم · {accounts.FirstOrDefault(a => a.Id == fee.AccountId)?.Label ?? fee.AccountId.ToString()} · {fee.Amount:G29}");
+            Row($"إجمالي الرسوم المسجلة {declaration.Charges.Sum(f => f.Amount):G29}");
+        }
         if(d.CounterpartyAccountId>0)Row("حساب الطرف · "+(accounts.FirstOrDefault(a=>a.Id==d.CounterpartyAccountId)?.Label??d.CounterpartyAccountId.ToString()));
         for(var i=0;i<d.Lines.Count;i++)
         {

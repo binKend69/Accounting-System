@@ -110,6 +110,24 @@ internal static class SqlUiSmoke
             Check(((TextBlock)limited.FindName("Status")).Text.Contains("لا تملك صلاحية"),"Read-only UI did not show permission rejection.");
             Check((await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(x=>x.ListAsync(actor,setup.Branch))).Count==4,"Denied UI save wrote a document.");
             limited.Close();
+
+            var cashier = new StockWindow(services.GetRequiredService<IServiceScopeFactory>(), actor, setup.Branch, setup.Currency,
+                workspace.Accounts.ToArray(), workspace.Currencies.ToArray()) { Confirmation = _ => true };
+            windows.Add(cashier);
+            await cashier.LoadAsync();
+            await cashier.StartPos();
+            cashier.Show();
+            ((ComboBox)cashier.FindName("Party")).SelectedValue = cash;
+            ((TextBox)cashier.FindName("Price")).Text = "30";
+            await Click(cashier, "AddStockLineButton");
+            await Click(cashier, "PayPosButton");
+            var paidSlot = await Use<IPosSlots,PosSlot>(s => s.LoadAsync(actor,setup.Branch,1));
+            Check(paidSlot.LastReceiptId.HasValue && paidSlot.Draft == null, "Cashier payment was not committed.");
+            await Click(cashier, "ReprintReceipt");
+            await Click(cashier, "ReprintKitchen");
+            Check((await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(s => s.ListAsync(actor,setup.Branch))).Count == 5,
+                "Printing repeated a sale.");
+            cashier.Close();
             await AdministrationSmoke.Run(services, actor, reader, setup.Branch, password);
             Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection. Confirmation dialogs use a test adapter; services and SQL are real.");
         }
