@@ -17,6 +17,7 @@ public partial class StockWindow
             if (tab != InvoiceTab) tab.Visibility = Visibility.Collapsed;
         DocumentCommands.Visibility = MovementDetails.Visibility = AddCatalogItem.Visibility = Visibility.Collapsed;
         PosCommands.Visibility = Visibility.Visible;
+        ShowDepartments();
         await RestoreSlot(1);
     }
 
@@ -25,6 +26,7 @@ public partial class StockWindow
         await using var scope = scopes.CreateAsyncScope();
         var saved = await scope.ServiceProvider.GetRequiredService<IPosSlots>().LoadAsync(actor, branch, number);
         var draft = saved.Draft;
+        lastReceipt = saved.LastReceiptId;
         slotNumber = number;
         slotVersion = saved.Version;
         source = draft?.SourceKey ?? Guid.NewGuid();
@@ -92,7 +94,11 @@ public partial class StockWindow
         await PersistSlot();
         await using var scope = scopes.CreateAsyncScope();
         var receipt = await scope.ServiceProvider.GetRequiredService<IPosSlots>().PayAsync(actor, branch, slotNumber, slotVersion);
+        lastReceipt = receipt.Id;
+        rows.Clear();
         await RestoreSlot(slotNumber);
-        Status.Text = $"تم الدفع · فاتورة بيع رقم {receipt.Number} · القيد {receipt.JournalId}.";
+        var receiptStatus = PrintReceipt(receipt, false);
+        var kitchenStatus = PrintReceipt(receipt, true);
+        Status.Text = $"تم الدفع · فاتورة {receipt.Number} · القيد {receipt.JournalId}. {receiptStatus} {kitchenStatus}";
     });
 }

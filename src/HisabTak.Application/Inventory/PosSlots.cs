@@ -1,6 +1,6 @@
 namespace HisabTak.Application.Inventory;
 
-public sealed record PosSlot(int Version, StockDocumentDraft? Draft);
+public sealed record PosSlot(int Version, StockDocumentDraft? Draft, long? LastReceiptId = null);
 
 public interface IPosSlots
 {

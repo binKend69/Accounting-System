@@ -52,6 +52,8 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         {
             if (!Enum.IsDefined(product.CostMethod) || !await db.Units.AnyAsync(x => x.Id == product.BaseUnitId && x.IsActive, ct))
                 throw new ArgumentException("Invalid base unit or cost method.");
+            if (product.DepartmentId is int department && !await db.Departments.AnyAsync(x => x.Id == department && x.IsActive, ct))
+                throw new ArgumentException("Invalid product department.");
             var code=product.Code;
             if(string.IsNullOrWhiteSpace(code))
             {
@@ -59,9 +61,9 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
                 while(await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockProducts WHERE Code=@c",ct,("@c",code))!=0);
             }
             var id = checked((int)await sql.ScalarAsync("""
-                INSERT dbo.StockProducts(Code,Name,BaseUnitId,CostMethod,TrackBatches) VALUES(@code,@name,@unit,@method,@track);
+                INSERT dbo.StockProducts(Code,Name,BaseUnitId,CostMethod,TrackBatches,DepartmentId,PrintInKitchen) VALUES(@code,@name,@unit,@method,@track,@department,@kitchen);
                 SELECT CAST(SCOPE_IDENTITY() AS int);
-                """, ct, ("@code",Name(code,40)),("@name",Name(product.Name,200)),("@unit",product.BaseUnitId),("@method",(int)product.CostMethod),("@track",product.TrackBatches)));
+                """, ct, ("@code",Name(code,40)),("@name",Name(product.Name,200)),("@unit",product.BaseUnitId),("@method",(int)product.CostMethod),("@track",product.TrackBatches),("@department",product.DepartmentId),("@kitchen",product.PrintInKitchen)));
             await sql.ExecuteAsync("INSERT dbo.StockProductUnits VALUES(@id,@unit,1)",ct,("@id",id),("@unit",product.BaseUnitId));
             if(!product.DecreaseQtyOnSale)
             {
@@ -71,6 +73,30 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             await Audit(actor,"PRODUCT_CREATED","StockProducts",id,ct);
             return id;
         });
+    public Task SetCashierProductAsync(int actor, int productId, int? departmentId, bool printInKitchen, CancellationToken ct = default) =>
+        Write(actor, PermissionCodes.SetupManage, ct, async () =>
+        {
+            if (await sql.ScalarAsync("SELECT COUNT(*) FROM dbo.StockProducts WHERE ProductId=@id", ct, ("@id",productId)) != 1 ||
+                departmentId.HasValue && !await db.Departments.AnyAsync(d => d.Id == departmentId && d.IsActive, ct))
+                throw new ArgumentException("Invalid cashier item or department.");
+            await sql.ExecuteAsync("UPDATE dbo.StockProducts SET DepartmentId=@dep, PrintInKitchen=@k WHERE ProductId=@id", ct,
+                ("@dep",departmentId), ("@k",printInKitchen), ("@id",productId));
+            await Audit(actor,"CASHIER_PRODUCT_CHANGED","StockProducts",productId,ct);
+            return true;
+        });
+
+    public Task SetDepartmentAppearanceAsync(int actor, int departmentId, string color, int order, CancellationToken ct = default) =>
+        Write(actor, PermissionCodes.SetupManage, ct, async () =>
+        {
+            if (order < 0 || color == null || !System.Text.RegularExpressions.Regex.IsMatch(color,"\\A#[a-fA-F0-9]{6}\\z") ||
+                !await db.Departments.AnyAsync(d => d.Id == departmentId && d.IsActive, ct))
+                throw new ArgumentException("Invalid department settings.");
+            await sql.ExecuteAsync("UPDATE dbo.Departments SET ColorHex=@color, DisplayOrder=@ord WHERE DepartmentId=@id", ct,
+                ("@id",departmentId), ("@color",color), ("@ord",order));
+            await Audit(actor,"DEPARTMENT_APPEARANCE_CHANGED","Departments",departmentId,ct);
+            return true;
+        });
+
     private async Task<int> CurrencyPrecision(int currencyId,int baseId,int basePrecision,CancellationToken ct)
     {
         var code=await db.Currencies.Where(x=>x.Id==currencyId && x.IsActive).Select(x=>x.Code).SingleAsync(ct);
@@ -176,12 +202,16 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         var units=await db.Units.Where(x=>x.IsActive).OrderBy(x=>x.NameAr)
             .Select(x=>new InventoryReference(x.Id,x.NameAr,null)).ToListAsync(ct);
         var settings=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0)),ct,("@b",branchId))).SingleOrDefault();
-        return new(warehouses,units,settings);
+        return new(warehouses,units,settings)
+        {
+            Departments = await db.Departments.Where(x => x.IsActive).OrderBy(x => x.DisplayOrder).ThenBy(x => x.NameAr)
+                .Select(x => new PosDepartment(x.Id, x.NameAr, x.ColorHex, x.DisplayOrder)).ToListAsync(ct)
+        };
     }
     public async Task<IReadOnlyList<ProductInfo>> ProductsAsync(int actor,CancellationToken ct=default)
     {
         await authorization.DemandAsync(actor,PermissionCodes.JournalRead,ct);
-        return await Rows("SELECT p.ProductId,p.Code,p.Name,p.BaseUnitId,p.CostMethod,p.TrackBatches,CAST(CASE WHEN s.ProductId IS NULL THEN 1 ELSE 0 END AS bit) FROM dbo.StockProducts p LEFT JOIN dbo.StockServiceItems s ON s.ProductId=p.ProductId ORDER BY p.Code",r=>new ProductInfo(r.GetInt32(0),r.GetString(1),r.GetString(2),r.GetInt32(3),(CostMethod)r.GetInt32(4),r.GetBoolean(5),r.GetBoolean(6)),ct);
+        return await Rows("SELECT p.ProductId,p.Code,p.Name,p.BaseUnitId,p.CostMethod,p.TrackBatches,CAST(CASE WHEN s.ProductId IS NULL THEN 1 ELSE 0 END AS bit),p.DepartmentId,p.PrintInKitchen FROM dbo.StockProducts p LEFT JOIN dbo.StockServiceItems s ON s.ProductId=p.ProductId ORDER BY p.Code",r=>new ProductInfo(r.GetInt32(0),r.GetString(1),r.GetString(2),r.GetInt32(3),(CostMethod)r.GetInt32(4),r.GetBoolean(5),r.GetBoolean(6),r.IsDBNull(7)?null:r.GetInt32(7),r.GetBoolean(8)),ct);
     }
     public async Task<IReadOnlyList<ProductUnitInfo>> UnitsAsync(int actor,int productId,CancellationToken ct=default)
     {
@@ -217,6 +247,23 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         if(d.SourceKey==Guid.Empty || !Enum.IsDefined(d.Kind) || d.Lines.Count is <1 or >500 || d.CurrencyId<=0 || d.RateToBase<=0 ||
             (d.Kind==StockDocumentKind.Transfer)!=(d.TargetWarehouseId!=null) || d.TargetWarehouseId==d.WarehouseId)
             throw new ArgumentException("Invalid stock document.");
+        if ((d.Kind == StockDocumentKind.CustomsClearance) != (d.Customs != null))
+            throw new ArgumentException("Customs fields belong to a clearance document.");
+        if (d.Customs is {} declaration)
+        {
+            if (declaration.VehicleCount < 1 || declaration.DeclarationType is not (1 or 2) ||
+                string.IsNullOrWhiteSpace(declaration.Country) || declaration.Country.Length > 100 ||
+                string.IsNullOrWhiteSpace(declaration.Goods) || declaration.Goods.Length > 200 ||
+                declaration.VehicleNumber is null || declaration.VehicleNumber.Length > 50 || declaration.Charges is null || declaration.Charges.Count > 100)
+                throw new ArgumentException("Invalid customs declaration.");
+            foreach (var charge in declaration.Charges)
+            {
+                if (charge.Amount <= 0 || !await db.Accounts.AnyAsync(x => x.Id == charge.AccountId && x.IsActive &&
+                    x.BranchId == d.BranchId && x.CurrencyId == d.CurrencyId, ct))
+                    throw new ArgumentException("Invalid customs fee or account.");
+                StockCalculation.Exact(charge.Amount, 2);
+            }
+        }
         bool returns=d.Kind is StockDocumentKind.SalesReturn or StockDocumentKind.PurchaseReturn;
         bool trade=IsIntent(d.Kind) || returns || d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Sale;
         if(!trade && (d.Credit || d.TaxEnabled) || d.TaxRate is <0 or >1 || !d.TaxEnabled && (d.TaxRate!=0 || d.PricesIncludeTax))

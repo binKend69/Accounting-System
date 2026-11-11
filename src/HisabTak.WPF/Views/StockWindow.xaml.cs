@@ -85,7 +85,7 @@ public partial class StockWindow : Window
     private sealed record DocChoice(StockDocument Document,string Label);
     private sealed record BatchChoice(long Id,string Label);
     private sealed record BalanceRow(StockBalance Balance, string Product, string Warehouse, DateOnly AsOf);
-    private static readonly Choice[] Kinds=[new(1,"افتتاحي مخزون"),new(2,"شراء"),new(3,"بيع"),new(4,"مردود شراء"),new(5,"مردود بيع"),new(6,"تحويل مخزني"),new(7,"زيادة جرد"),new(8,"نقص جرد"),new(9,"عرض سعر"),new(10,"أمر شراء")];
+    private static readonly Choice[] Kinds=[new(1,"افتتاحي مخزون"),new(2,"شراء"),new(3,"بيع"),new(4,"مردود شراء"),new(5,"مردود بيع"),new(6,"تحويل مخزني"),new(7,"زيادة جرد"),new(8,"نقص جرد"),new(9,"عرض سعر"),new(10,"أمر شراء"),new(11,"تخليص جمركي")];
     public StockWindow(IServiceScopeFactory scopes,int actor,int branch,int currency,AccountLookup[] accounts,AccountingLookup[]? currencies=null)
     {
         InitializeComponent(); this.scopes=scopes; this.actor=actor; this.branch=branch; this.currency=currency; this.accounts=accounts;this.currencies=currencies??[new(currency,currency.ToString())];
@@ -140,6 +140,7 @@ public partial class StockWindow : Window
         var units=lookups.Units.Select(x=>new Choice(x.Id,x.Name));
         Bind(BaseUnit,units);Bind(ExtraUnit,units);Bind(PriceUnit,units);
         var items=products.Select(x=>new Choice(x.Id,x.Code+" · "+x.Name));
+        Bind(ItemDepartment, new[]{new Choice(0,"بدون قسم")}.Concat(lookups.Departments.Select(x => new Choice(x.Id,x.Name))));
         Bind(Item,items);Bind(SetupProduct,items);
         Catalog.ItemsSource = products;
         FilterProducts();
@@ -149,7 +150,7 @@ public partial class StockWindow : Window
         if(firstLoad)InvoiceCurrency.SelectedValue=currency;
         var ac=accounts.Where(x=>x.CurrencyId==currency).Select(x=>new Choice(x.Id,x.Label));
         foreach(var box in new[]{StockAccount,SalesAccount,CostAccount,Adjustment,InputTax,OutputTax}) Bind(box,ac);
-        foreach(var box in new[]{Party,Cash,LimitCustomer}) Bind(box,accounts.Select(x=>new Choice(x.Id,x.Label)));
+        foreach(var box in new[]{Party,Cash,LimitCustomer,FeeAccount}) Bind(box,accounts.Select(x=>new Choice(x.Id,x.Label)));
         Bind(SalesReturnsAccount,new[]{new Choice(0,"غير محدد")}.Concat(ac));
         foreach(var box in new[]{FxGain,FxLoss}) Bind(box,new[]{new Choice(0,"غير محدد")}.Concat(ac));
         if(lookups.Accounts is InventoryAccounts a)
@@ -187,24 +188,25 @@ public partial class StockWindow : Window
     {
         var kind=(StockDocumentKind)Id(Kind);
         var trade=kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder or StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
-        return new(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),trade?Id(Party):0,
-            trade && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true);
+        return new StockDocumentDraft(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),trade?Id(Party):0,
+            trade && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true) { Customs = kind == StockDocumentKind.CustomsClearance ? ReadDeclaration() : null };
     }
     private bool Dirty()
     {
         if(current==null)return rows.Count!=0;
         if(current.State!=1 || current.ConvertedInvoiceId.HasValue)return false;
-        try{var d=Build();return (d with {Lines=current.Draft.Lines})!=current.Draft || !d.Lines.SequenceEqual(current.Draft.Lines);}
+        try{var d=Build();return (d with {Lines=current.Draft.Lines, Customs=current.Draft.Customs})!=current.Draft || !SameDeclaration(d.Customs,current.Draft.Customs) || !d.Lines.SequenceEqual(current.Draft.Lines);}
         catch(Exception){return true;}
     }
     private bool Discard()=>!Dirty() || Confirm("ترك تعديلات المستند غير المحفوظة؟");
     private void Buttons()
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
+        PrintSaleButton.Visibility = KitchenCopyButton.Visibility = current is { State: 2, Draft.Kind: StockDocumentKind.Sale } ? Visibility.Visible : Visibility.Collapsed;
         var intent = current?.Draft.Kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder;
         ConvertButton.Visibility = intent ? Visibility.Visible : Visibility.Collapsed;
         ConvertButton.Content = current?.ConvertedInvoiceId != null ? "فتح الفاتورة المرتبطة" : "تحويل إلى مسودة فاتورة";
-        PostButton.IsEnabled = current?.State == 1 && !intent;
+        PostButton.IsEnabled = current?.State == 1 && !intent && current.Draft.Kind != StockDocumentKind.CustomsClearance;
         if (current?.ConvertedInvoiceId != null) SaveButton.IsEnabled = false;
         AddStockLineButton.IsEnabled = SaveButton.IsEnabled;
         foreach(var control in new Control[]{Warehouse,Target,Party,InvoiceCurrency,InvoiceRate,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
@@ -213,7 +215,7 @@ public partial class StockWindow : Window
     }
     private void ShowDocument(StockDocument doc)
     {
-        current=doc;var d=doc.Draft;source=d.SourceKey;Kind.SelectedValue=(int)d.Kind;EntryDate.SelectedDate=d.Date.ToDateTime(TimeOnly.MinValue);
+        current=doc;var d=doc.Draft;ShowDeclaration(d.Customs);source=d.SourceKey;Kind.SelectedValue=(int)d.Kind;EntryDate.SelectedDate=d.Date.ToDateTime(TimeOnly.MinValue);
         InvoiceCurrency.SelectedValue=d.CurrencyId;InvoiceRate.Text=d.RateToBase.ToString("G29",CultureInfo.InvariantCulture);
         Warehouse.SelectedValue=d.WarehouseId;Target.SelectedValue=d.TargetWarehouseId;Party.SelectedValue=d.CounterpartyAccountId;Credit.IsChecked=d.Credit;
         TaxEnabled.IsChecked=d.TaxEnabled;TaxRate.Text=(d.TaxRate*100).ToString("G29",CultureInfo.InvariantCulture);Inclusive.IsChecked=d.PricesIncludeTax;
@@ -222,7 +224,7 @@ public partial class StockWindow : Window
     }
     private void NewDocument(object sender,RoutedEventArgs e)
     {
-        if(!Discard())return;Original.Clear();current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
+        if(!Discard())return;ShowDeclaration(null);Original.Clear();current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
         InvoiceCurrency.SelectedValue=currency;InvoiceRate.Text="1";Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
     }
     private async void AddLine(object sender,RoutedEventArgs e)=>await Run(()=> {
@@ -327,11 +329,11 @@ public partial class StockWindow : Window
     private async void SetBarcode(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetBarcodeAsync(actor,Id(SetupProduct),Id(PriceUnit),SetupBarcode.Text));Status.Text="تم ربط الباركود.";});
     private async void SetPrice(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetPriceAsync(actor,Id(SetupProduct),Id(PriceUnit),Id(PriceCurrency),SetupTier.Text,Number(SetupPrice)));Status.Text="تم حفظ السعر.";});
     private async void CreateProduct(object sender,RoutedEventArgs e)=>await Run(async()=>{
-        var id=await Use(s=>s.CreateProductAsync(actor,new(Code.Text,ProductName.Text,Id(BaseUnit),Method.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase,Tracked.IsChecked==true,ServiceItem.IsChecked!=true)));
+        var id=await Use(s=>s.CreateProductAsync(actor,new(Code.Text,ProductName.Text,Id(BaseUnit),Method.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase,Tracked.IsChecked==true,ServiceItem.IsChecked!=true, ItemDepartment.SelectedValue is int dep && dep > 0 ? dep : null, KitchenItem.IsChecked==true)));
         await LoadLookups();
         SetupProduct.SelectedValue = id;
         Code.Clear();
-        ProductName.Clear();
+        ProductName.Clear();KitchenItem.IsChecked=false;ItemDepartment.SelectedIndex=0;
         if (returnToInvoice)
         {
             returnToInvoice = false;

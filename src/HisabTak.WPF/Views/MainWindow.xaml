@@ -62,6 +62,7 @@
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE8C7;" CommandParameter="cash" Content="أرصدة الخزائن" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE719;" CommandParameter="pos" Content="نقطة البيع" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE8A5;" CommandParameter="SalesQuote" Content="عرض سعر" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE7BF;" CommandParameter="CustomsClearance" Content="تخليص جمركي" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE7BF;" CommandParameter="PurchaseOrder" Content="أمر شراء" Click="HomeAction_Click"/>
                                 <Button x:Name="HomeJournalButton" Style="{StaticResource HomeAction}" Tag="&#xE70F;" CommandParameter="JOURNAL_VOUCHER" Content="سند قيد" Click="HomeAction_Click"/>
                             </WrapPanel>

@@ -175,6 +175,7 @@ public sealed partial class StockDocumentService
     {
             var doc=await Read(id,ct); var d=doc.Draft;
             await Branch(actor,d.BranchId,ct);
+            if (d.Kind == StockDocumentKind.CustomsClearance) throw new InvalidOperationException("Customs fee posting policy is pending.");
             if (IsIntent(d.Kind)) throw new InvalidOperationException("Convert the intent to an invoice before posting.");
             if(doc.State!=1)
             {

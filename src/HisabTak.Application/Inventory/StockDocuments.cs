@@ -2,16 +2,23 @@ using HisabTak.Domain.Inventory;
 
 namespace HisabTak.Application.Inventory;
 
-public enum StockDocumentKind { Opening = 1, Purchase = 2, Sale = 3, PurchaseReturn = 4, SalesReturn = 5, Transfer = 6, Increase = 7, Decrease = 8, SalesQuote = 9, PurchaseOrder = 10 }
-public sealed record ProductDefinition(string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true);
-public sealed record ProductInfo(int Id, string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true);
+public enum StockDocumentKind { Opening = 1, Purchase = 2, Sale = 3, PurchaseReturn = 4, SalesReturn = 5, Transfer = 6, Increase = 7, Decrease = 8, SalesQuote = 9, PurchaseOrder = 10, CustomsClearance = 11 }
+public sealed record ProductDefinition(string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true, int? DepartmentId = null, bool PrintInKitchen = false);
+public sealed record ProductInfo(int Id, string Code, string Name, int BaseUnitId, CostMethod CostMethod, bool TrackBatches, bool DecreaseQtyOnSale = true, int? DepartmentId = null, bool PrintInKitchen = false);
 public sealed record ProductUnitInfo(int ProductId, int UnitId, decimal Factor);
 public sealed record BatchInfo(long Id, int ProductId, int WarehouseId, string Code, DateOnly Expiry);
 public sealed record StockLine(int ProductId, int UnitId, decimal Quantity, decimal UnitPrice = 0m,
-    decimal Discount = 0m, long? BatchId = null, string? BatchOverrideReason = null, long? OriginalMovementId = null);
+    decimal Discount = 0m, long? BatchId = null, string? BatchOverrideReason = null, long? OriginalMovementId = null, bool PrintInKitchen = false);
 public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocumentKind Kind, DateOnly Date,
     int WarehouseId, int? TargetWarehouseId, int CurrencyId, decimal RateToBase, int CounterpartyAccountId,
-    bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false);
+    bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false)
+{
+    public CustomsDeclaration? Customs { get; init; }
+}
+public sealed record CustomsDeclaration(int VehicleCount, string VehicleNumber, string Country, string Goods, int DeclarationType,
+    IReadOnlyList<CustomsCharge> Charges);
+public sealed record CustomsCharge(int AccountId, decimal Amount);
+public sealed record PosDepartment(int Id, string Name, string? Color, int DisplayOrder);
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
     int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.KeepAcquisitionValue, int? SalesReturnsAccountId = null);
 public sealed record StockMovement(long Id, long DocumentId, int LineNumber, int ProductId, int WarehouseId,
@@ -27,7 +34,10 @@ public sealed record DebtBalance(long DocumentId, int AccountId, int CurrencyId,
     decimal OriginalAmount, decimal RemainingAmount, decimal OriginalBookValue, decimal RemainingBookValue);
 public sealed record DebtPayment(Guid SourceKey, long InvoiceId, DateOnly Date, decimal Amount, int CashAccountId, decimal? CashAmount = null, decimal? CashRateToBase = null);
 
-public sealed record StockLookups(IReadOnlyList<InventoryReference> Warehouses, IReadOnlyList<InventoryReference> Units, InventoryAccounts? Accounts);
+public sealed record StockLookups(IReadOnlyList<InventoryReference> Warehouses, IReadOnlyList<InventoryReference> Units, InventoryAccounts? Accounts)
+{
+    public IReadOnlyList<PosDepartment> Departments { get; init; } = [];
+}
 
 public sealed record StockHistoryFilter(DateOnly From, DateOnly To, int? ProductId = null, int? WarehouseId = null,
     StockDocumentKind? Kind = null, int Page = 0);
@@ -45,6 +55,8 @@ public interface IStockDocumentService
     Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
     Task SetCurrencyPrecisionAsync(int actor, int currencyId, int precision, CancellationToken ct = default);
+    Task SetCashierProductAsync(int actor, int productId, int? departmentId, bool printInKitchen, CancellationToken ct = default);
+    Task SetDepartmentAppearanceAsync(int actor, int departmentId, string color, int order, CancellationToken ct = default);
     Task SetBarcodeAsync(int actor,int productId,int unitId,string barcode,CancellationToken ct=default);
     Task<ProductUnitInfo?> ScanAsync(int actor,string barcode,CancellationToken ct=default);
     Task SetPriceAsync(int actor,int productId,int unitId,int currencyId,string tier,decimal price,CancellationToken ct=default);

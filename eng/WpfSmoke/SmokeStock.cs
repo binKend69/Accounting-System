@@ -9,6 +9,8 @@ internal sealed class SmokeStock : IStockDocumentService
     public Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default) => Task.FromResult(new StockLookups([new(1,"المستودع",1)],[new(1,"حبة",null)],null));
     public Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SetCurrencyPrecisionAsync(int actor,int currencyId,int precision,CancellationToken ct=default) => throw new NotSupportedException();
+    public Task SetCashierProductAsync(int actor, int productId, int? departmentId, bool printInKitchen, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task SetDepartmentAppearanceAsync(int actor, int departmentId, string color, int order, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SetBarcodeAsync(int actor,int productId,int unitId,string barcode,CancellationToken ct=default) => throw new NotSupportedException();
     public Task<ProductUnitInfo?> ScanAsync(int actor,string barcode,CancellationToken ct=default) => throw new NotSupportedException();
     public Task SetPriceAsync(int actor,int productId,int unitId,int currencyId,string tier,decimal price,CancellationToken ct=default) => throw new NotSupportedException();

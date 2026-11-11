@@ -40,6 +40,24 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
     [SqlServerFact]
+    public async Task Customs_draft_roundtrips_without_posting_and_rejects_fees_on_other_kinds()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var store = await StoreAsync(test);
+        var actor = store.F.Owner;
+        var declaration = new CustomsDeclaration(1, "T-123", "اليمن", "قطع غيار", 1, [new(store.Cash, 100)]);
+        var draft = Draft(store, StockDocumentKind.CustomsClearance, 0, new StockLine(store.Product, store.Unit, 10, 20)) with { Customs = declaration };
+        Task<StockDocument> Save(StockDocumentDraft d) => With<IStockDocumentService,StockDocument>(test, s => s.SaveAsync(actor, d));
+        var saved = await Save(draft);
+        Assert.Equal(declaration.Charges[0], Assert.Single(saved.Draft.Customs!.Charges));
+        Assert.Equal("T-123", saved.Draft.Customs.VehicleNumber);
+        await Assert.ThrowsAsync<ArgumentException>(() => Save(draft with { Kind = StockDocumentKind.Purchase }));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => With<IStockDocumentService,StockDocument>(test, s => s.PostAsync(actor,saved.Id,saved.Version)));
+        Assert.Empty(await Stock(test, store, Date));
+        Assert.Equal(0, await Count(test,"JournalEntries"));
+    }
+
+    [SqlServerFact]
     public async Task Trade_intents_only_affect_stock_and_journals_when_the_linked_invoice_posts()
     {
         await using var test = await SqlTestDatabase.CreateAsync();
@@ -95,7 +113,13 @@ public sealed partial class LedgerIntegrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => Pay(1));
         Assert.NotNull((await Load(1)).Draft);
         await Trade(test, store, Draft(store, StockDocumentKind.Purchase, store.Cash, new StockLine(store.Product, store.Unit, 10, 20)));
+        await Change<IStockDocumentService>(test, service => service.SetCashierProductAsync(actor, store.Product, null, true));
         var receipts = await Task.WhenAll(Pay(1), Pay(1));
+        Assert.Equal(receipts[0].Id, (await Load(1)).LastReceiptId);
+        Assert.True(Assert.Single(receipts[0].Draft.Lines).PrintInKitchen);
+        await Change<IStockDocumentService>(test, service => service.SetCashierProductAsync(actor, store.Product, null, false));
+        var reprint = await With<IStockDocumentService,StockDocument>(test, service => service.GetAsync(actor,receipts[0].Id));
+        Assert.True(Assert.Single(reprint.Draft.Lines).PrintInKitchen);
         Assert.Equal(receipts[0].Id, receipts[1].Id);
         Assert.NotNull(receipts[0].JournalId);
         Assert.Null((await Load(1)).Draft);
