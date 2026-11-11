@@ -40,6 +40,35 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
     [SqlServerFact]
+    public async Task Pos_slots_restore_and_concurrent_payment_posts_once()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var store = await StoreAsync(test);
+        var actor = store.F.Owner;
+        var branch = store.F.Branch;
+        Task<PosSlot> Load(int slot) => With<IPosSlots, PosSlot>(test, x => x.LoadAsync(actor, branch, slot));
+        Task<StockDocument> Pay(int version) => With<IPosSlots, StockDocument>(test, x => x.PayAsync(actor, branch, 1, version));
+        for (var slot = 1; slot <= 4; slot++)
+        {
+            var draft = Draft(store, StockDocumentKind.Sale, store.Cash, new StockLine(store.Product, store.Unit, slot, 30));
+            await With<IPosSlots, PosSlot>(test, x => x.SaveSlotAsync(actor, branch, slot, 0, draft));
+        }
+        for (var slot = 1; slot <= 4; slot++)
+            Assert.Equal((decimal)slot, Assert.Single((await Load(slot)).Draft!.Lines).Quantity);
+        await Assert.ThrowsAsync<DocumentConflictException>(() =>
+            With<IPosSlots, PosSlot>(test, x => x.SaveSlotAsync(actor, branch, 1, 0, null)));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Pay(1));
+        Assert.NotNull((await Load(1)).Draft);
+        await Trade(test, store, Draft(store, StockDocumentKind.Purchase, store.Cash, new StockLine(store.Product, store.Unit, 10, 20)));
+        var receipts = await Task.WhenAll(Pay(1), Pay(1));
+        Assert.Equal(receipts[0].Id, receipts[1].Id);
+        Assert.NotNull(receipts[0].JournalId);
+        Assert.Null((await Load(1)).Draft);
+        Assert.NotNull((await Load(2)).Draft);
+        Assert.Equal(9m, Assert.Single(await Stock(test, store, Date)).Quantity);
+    }
+
+    [SqlServerFact]
     public async Task Unit_barcode_resolves_box_and_price_is_scoped_to_currency_and_tier()
     {
         await using var test=await SqlTestDatabase.CreateAsync();var s=await StoreAsync(test);

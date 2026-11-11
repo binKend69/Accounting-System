@@ -113,10 +113,10 @@ public partial class StockWindow : Window
     private async Task Run(Func<Task> work)
     {
         if(busy) return;
-        busy=true; Tabs.IsEnabled=false;
+        busy=true; Tabs.IsEnabled=false; PosCommands.IsEnabled=false;
         try { await work(); }
         catch(UnauthorizedAccessException){Status.Text="لا تملك صلاحية هذه العملية في الفرع.";}
-        catch(DocumentConflictException){Status.Text="تغيرت النسخة المحفوظة. افتح المستند مجددًا من السجل.";}
+        catch(DocumentConflictException){Status.Text=slotNumber == 0 ? "تغيرت النسخة المحفوظة. افتح المستند مجددًا من السجل." : "تغيرت الخانة في جلسة أخرى. اختر استعادة آخر حفظ."; }
         catch(Exception e) when(e is ArgumentException or FormatException or OverflowException){Status.Text="راجع الاختيارات والأرقام والتاريخ. استخدم النقطة للفاصل العشري.";}
         catch(InvalidOperationException e) when(e.Message.Contains("sales returns account",StringComparison.Ordinal)){Status.Text="حدد حساب مردودات المبيعات المستقل في إعداد الفرع قبل الترحيل.";}
         catch(InvalidOperationException e) when(e.Message.Contains("valuation policy",StringComparison.Ordinal)){Status.Text="اختر معالجة فرق آخر شراء في إعداد حسابات الفرع."; }
@@ -124,7 +124,7 @@ public partial class StockWindow : Window
         catch(InvalidOperationException e) when(e.Message.Contains("credit limit",StringComparison.OrdinalIgnoreCase)){Status.Text="راجع الحد الائتماني للعميل وقيمة رصيده قبل البيع الآجل."; }
         catch(InvalidOperationException e) when(e.Message.StartsWith("Backdated",StringComparison.Ordinal)){Status.Text="تاريخ المستند أقدم من آخر حركة للصنف في المستودع."; }
         catch(Exception){Status.Text="تعذرت العملية. راجع الرصيد والصلاحية والفترة والحسابات والاتصال ثم افتح النسخة المحفوظة للتحقق.";}
-        finally{busy=false;Tabs.IsEnabled=true;Buttons();}
+        finally{busy=false;Tabs.IsEnabled=true;PosCommands.IsEnabled=true;Buttons();}
     }
     public async Task LoadAsync()
     {
@@ -202,7 +202,8 @@ public partial class StockWindow : Window
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
         foreach(var control in new Control[]{Warehouse,Target,Party,InvoiceCurrency,InvoiceRate,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
-        Kind.IsEnabled=current==null;
+        Kind.IsEnabled=current==null && slotNumber == 0;
+        if (slotNumber != 0) Credit.IsEnabled = false;
     }
     private void ShowDocument(StockDocument doc)
     {

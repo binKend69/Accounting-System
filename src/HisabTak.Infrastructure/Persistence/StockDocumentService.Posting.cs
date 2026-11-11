@@ -169,8 +169,10 @@ public sealed partial class StockDocumentService
         return new(net,tax,issue.Value,issue.Revaluation,originalInvoice);
     }
     public Task<StockDocument> PostAsync(int actor,long id,int version,CancellationToken ct=default) =>
-        Write(actor,PermissionCodes.JournalPost,ct,async () =>
-        {
+        Write(actor,PermissionCodes.JournalPost,ct,() => PostCore(actor,id,version,ct));
+
+    private async Task<StockDocument> PostCore(int actor,long id,int version,CancellationToken ct)
+    {
             var doc=await Read(id,ct); var d=doc.Draft;
             await Branch(actor,d.BranchId,ct);
             if(doc.State!=1)
@@ -245,5 +247,5 @@ public sealed partial class StockDocumentService
             await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET State=2,Version=Version+1,Number=@n,JournalId=@j WHERE DocumentId=@i",ct,("@i",id),("@j",journal),("@n",number));
             await Audit(actor,"STOCK_DOCUMENT_POSTED","StockDocuments",id,ct);
             return await Read(id,ct);
-        });
+    }
 }

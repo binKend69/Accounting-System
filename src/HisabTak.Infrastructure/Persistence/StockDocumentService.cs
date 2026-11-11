@@ -257,8 +257,10 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             """,ct,("@k",key))!=0) throw new InvalidOperationException("Source key already reserved.");
     }
     public Task<StockDocument> SaveAsync(int actor,StockDocumentDraft draft,CancellationToken ct=default) =>
-        Write(actor,PermissionCodes.JournalPost,ct,async () =>
-        {
+        Write(actor,PermissionCodes.JournalPost,ct,() => SaveCore(actor,draft,ct));
+
+    private async Task<StockDocument> SaveCore(int actor,StockDocumentDraft draft,CancellationToken ct)
+    {
             draft=await ReturnHeader(actor,draft,ct);
             await Validate(actor,draft,ct);
             var payload=StockPayload.Encode(draft);
@@ -274,7 +276,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
                 ct,("@b",draft.BranchId),("@k",draft.SourceKey),("@t",(int)draft.Kind),("@d",draft.Date),("@p",payload),("@a",actor));
             await Audit(actor,"STOCK_DRAFT_SAVED","StockDocuments",id,ct);
             return await Read(id,ct);
-        });
+    }
     public Task<StockDocument> UpdateAsync(int actor,long id,int version,StockDocumentDraft draft,CancellationToken ct=default) =>
         Write(actor,PermissionCodes.JournalPost,ct,async () =>
         {

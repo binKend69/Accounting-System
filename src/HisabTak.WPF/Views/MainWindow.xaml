@@ -60,6 +60,7 @@
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE7A6;" CommandParameter="SalesReturn" Content="مردود بيع" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE9F9;" CommandParameter="balances" Content="أرصدة المخزون" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE8C7;" CommandParameter="cash" Content="أرصدة الخزائن" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE719;" CommandParameter="pos" Content="نقطة البيع" Click="HomeAction_Click"/>
                                 <Button x:Name="HomeJournalButton" Style="{StaticResource HomeAction}" Tag="&#xE70F;" CommandParameter="JOURNAL_VOUCHER" Content="سند قيد" Click="HomeAction_Click"/>
                             </WrapPanel>
                         </ScrollViewer>

@@ -85,7 +85,8 @@ public partial class MainWindow : Window
         if (baseCurrencyId is not int currency) throw new InputException("اختر عملة الأساس أولاً.");
         var window = new StockWindow(scopes, Actor, Branch, currency, Accounts.ToArray(), CurrencyBox.Items.Cast<AccountingLookup>().ToArray()) { Owner = this };
         await window.LoadAsync();
-        if (action == "products") window.Tabs.SelectedItem = window.ProductSetupTab;
+        if (action == "pos") await window.StartPos();
+        else if (action == "products") window.Tabs.SelectedItem = window.ProductSetupTab;
         else if (action == "balances") window.Tabs.SelectedItem = window.BalancesTab;
         else if (Enum.TryParse<StockDocumentKind>(action, out var kind)) window.Kind.SelectedValue = (int)kind;
         window.ShowDialog();
