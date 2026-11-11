@@ -31,7 +31,7 @@ public partial class StockWindow : Window
     private sealed record Choice(int Id,string Label);
     private sealed record DocChoice(StockDocument Document,string Label);
     private sealed record BatchChoice(long Id,string Label);
-    private sealed record BalanceRow(string Product,string Warehouse,decimal Quantity,decimal BookValue);
+    private sealed record BalanceRow(StockBalance Balance, string Product, string Warehouse, DateOnly AsOf);
     private static readonly Choice[] Kinds=[new(1,"افتتاحي مخزون"),new(2,"شراء"),new(3,"بيع"),new(4,"مردود شراء"),new(5,"مردود بيع"),new(6,"تحويل مخزني"),new(7,"زيادة جرد"),new(8,"نقص جرد")];
     public StockWindow(IServiceScopeFactory scopes,int actor,int branch,int currency,AccountLookup[] accounts,AccountingLookup[]? currencies=null)
     {
@@ -122,8 +122,11 @@ public partial class StockWindow : Window
     {
         var docs=await Use(s=>s.ListAsync(actor,branch,page));
         Documents.ItemsSource=docs.Select(d=>new DocChoice(d,$"{Kinds.Single(x=>x.Id==(int)d.Draft.Kind).Label} · {(d.Number?.ToString()??"مسودة")} · {d.Draft.Date:yyyy-MM-dd} · {(d.State==1?"مسودة":d.State==2?"مرحل":"معكوس")}")).ToArray();
-        var stock=await Use(s=>s.BalancesAsync(actor,branch,Day(AsOf)));
-        Balances.ItemsSource=stock.Select(x=>new BalanceRow(Product(x.ProductId),lookups.Warehouses.FirstOrDefault(w=>w.Id==x.WarehouseId)?.Name??x.WarehouseId.ToString(),x.Quantity,x.BookValue)).ToArray();
+        var balanceDate = Day(AsOf);
+        var stock = await Use(s => s.BalancesAsync(actor, branch, balanceDate));
+        Balances.ItemsSource = stock.Select(balance => new BalanceRow(balance, Product(balance.ProductId),
+            lookups.Warehouses.FirstOrDefault(w => w.Id == balance.WarehouseId)?.Name ?? balance.WarehouseId.ToString(),
+            balanceDate)).ToArray();
         Debts.ItemsSource=await Use(s=>s.DebtsAsync(actor,branch));
     }
     private StockDocumentDraft Build()

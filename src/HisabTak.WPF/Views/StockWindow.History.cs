@@ -27,6 +27,26 @@ public partial class StockWindow
         HistoryPreviousButton.IsEnabled=filter.Page>0;HistoryNextButton.IsEnabled=result.HasMore;
         HistoryPageText.Text=$"الصفحة {filter.Page+1} · {result.Rows.Count} سطر";
     }
+    private async void OpenBalanceHistory(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        if (Balances.SelectedItem is not BalanceRow selected)
+        {
+            Status.Text = "اختر رصيد الصنف والمستودع أولاً.";
+            return;
+        }
+
+        var filter = new StockHistoryFilter(new DateOnly(selected.AsOf.Year, 1, 1), selected.AsOf,
+            selected.Balance.ProductId, selected.Balance.WarehouseId);
+        await LoadHistory(filter);
+        HistoryFrom.SelectedDate = filter.From.ToDateTime(TimeOnly.MinValue);
+        HistoryTo.SelectedDate = filter.To.ToDateTime(TimeOnly.MinValue);
+        HistoryProduct.SelectedValue = filter.ProductId;
+        HistoryWarehouse.SelectedValue = filter.WarehouseId;
+        HistoryKind.SelectedValue = 0;
+        Tabs.SelectedItem = HistoryTab;
+        Status.Text = $"تاريخ البيع والشراء منذ بداية السنة · {selected.Product} · {selected.Warehouse} حتى {selected.AsOf:yyyy-MM-dd}";
+    });
+
     private async void SearchHistory(object sender,RoutedEventArgs e)=>await Run(()=>LoadHistory(new(Day(HistoryFrom),Day(HistoryTo),
         Id(HistoryProduct)==0?null:Id(HistoryProduct),Id(HistoryWarehouse)==0?null:Id(HistoryWarehouse),
         Id(HistoryKind)==0?null:(StockDocumentKind)Id(HistoryKind))));
