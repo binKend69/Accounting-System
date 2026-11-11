@@ -34,6 +34,10 @@ public partial class MainWindow : Window
         if (sender is not Button { CommandParameter: string action } || busy || administrationOnly) return;
         switch (action)
         {
+            case "cash":
+                WorkTabs.SelectedItem = CashTab;
+                await LoadCash();
+                return;
             case "accounts":
                 WorkTabs.SelectedItem = AccountsTab;
                 return;
@@ -52,6 +56,30 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ClearCashReport(object sender, RoutedEventArgs e)
+    {
+        if (CashGrid != null) CashGrid.ItemsSource = null;
+    }
+    private async void RefreshCash(object sender, RoutedEventArgs e) => await LoadCash();
+    private Task LoadCash() => Run(async () =>
+    {
+        CashGrid.ItemsSource = null;
+        if (CashDate.SelectedDate is not DateTime date || CashCurrency.SelectedValue is not int currencyId)
+            throw new InputException("اختر التاريخ والعملة لعرض أرصدة الصناديق.");
+        var balances = await Use<IJournalService, IReadOnlyList<LedgerBalance>>(service =>
+            service.BalancesAsync(Actor, Branch, currencyId, DateOnly.FromDateTime(date)));
+        var byAccount = balances.ToDictionary(row => row.AccountId);
+        var cash = Accounts.Where(account => account.IsCash && account.CurrencyId == currencyId)
+            .Select(account =>
+            {
+                byAccount.TryGetValue(account.Id, out var row);
+                var debit = row?.Debit ?? 0m;
+                var credit = row?.Credit ?? 0m;
+                return new { Name = account.Label, Debit = debit, Credit = credit, Balance = debit - credit };
+            }).ToArray();
+        CashGrid.ItemsSource = cash;
+        StatusText.Text = cash.Length == 0 ? "لا توجد حسابات صندوق نشطة بهذه العملة في الفرع." : "عُرضت أرصدة القيود المرحلة حتى التاريخ المحدد.";
+    });
     private Task OpenStock(string? action = null) => Run(async () =>
     {
         if (baseCurrencyId is not int currency) throw new InputException("اختر عملة الأساس أولاً.");
@@ -192,10 +220,15 @@ public partial class MainWindow : Window
     }
     private async Task LoadBranch()
     {
+        CashGrid.ItemsSource = null;
         ClearInventory();
         var workspace = await Use<IAccountingWorkspaceService, AccountingWorkspace>(s => s.LoadAsync(Actor, Branch));
         Accounts.Clear(); foreach (var item in workspace.Accounts) Accounts.Add(item);
         baseCurrencyId = workspace.BaseCurrencyId;
+        CashDate.SelectedDate = DateTime.Today;
+        CashCurrency.ItemsSource = workspace.Currencies;
+        CashCurrency.SelectedValue = baseCurrencyId;
+        if (CashCurrency.SelectedIndex < 0 && CashCurrency.Items.Count > 0) CashCurrency.SelectedIndex = 0;
         PeriodBox.ItemsSource = workspace.Periods;
         GroupBox.ItemsSource = workspace.Groups; CurrencyBox.ItemsSource = workspace.Currencies;
         GeneralGroupBox.ItemsSource = workspace.GeneralGroups; BaseCurrencyBox.ItemsSource = workspace.Currencies;

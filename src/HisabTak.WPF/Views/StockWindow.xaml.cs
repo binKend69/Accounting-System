@@ -21,6 +21,59 @@ public partial class StockWindow : Window
     private IReadOnlyList<ProductInfo> products=[];
     private StockDocument? current;
     private DebtPayment? pendingPayment;
+    private bool returnToInvoice;
+    private void OpenProductEntry(object sender, RoutedEventArgs e)
+    {
+        returnToInvoice = true;
+        Tabs.SelectedItem = ProductSetupTab;
+        ProductName.Focus();
+    }
+    private void CatalogSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (Catalog.SelectedItem is ProductInfo product) SetupProduct.SelectedValue = product.Id;
+    }
+    private async void FindReturnInvoice(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        var until = Day(EntryDate);
+        var kind = Id(Kind) == (int)StockDocumentKind.SalesReturn ? StockDocumentKind.Sale : StockDocumentKind.Purchase;
+        var from = new DateOnly(until.Year, 1, 1);
+        await LoadHistory(new StockHistoryFilter(from, until, Kind: kind));
+        HistoryFrom.SelectedDate = from.ToDateTime(TimeOnly.MinValue);
+        HistoryTo.SelectedDate = until.ToDateTime(TimeOnly.MinValue);
+        HistoryProduct.SelectedValue = HistoryWarehouse.SelectedValue = 0;
+        HistoryKind.SelectedValue = (int)kind;
+        Tabs.SelectedItem = HistoryTab;
+        MovementDetails.IsExpanded = true;
+        Status.Text = "اختر الفاتورة وافتح تفاصيلها ثم حدّد حركة الصنف لإنشاء المردود. يمكن تغيير فترة البحث.";
+    });
+    private async void ReturnMovement(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        if (current is not { State: 2 } invoice || invoice.Draft.Kind is not (StockDocumentKind.Purchase or StockDocumentKind.Sale)
+            || Moves.SelectedItem is not StockMovement movement)
+        {
+            Status.Text = "افتح فاتورة بيع أو شراء مرحلة ثم اختر حركة الصنف المطلوب إرجاعه.";
+            return;
+        }
+        var line = invoice.Draft.Lines[movement.LineNumber];
+        Item.SelectedValue = line.ProductId;
+        await LineOptions();
+        Unit.SelectedValue = line.UnitId;
+        if (!Equals(Item.SelectedValue, line.ProductId) || !Equals(Unit.SelectedValue, line.UnitId))
+            throw new ArgumentException("Original unit unavailable.");
+        current = null;
+        source = Guid.NewGuid();
+        rows.Clear();
+        Moves.ItemsSource = null;
+        Kind.SelectedValue = (int)(invoice.Draft.Kind == StockDocumentKind.Purchase ? StockDocumentKind.PurchaseReturn : StockDocumentKind.SalesReturn);
+        EntryDate.SelectedDate = DateTime.Today;
+        Batch.SelectedValue = movement.BatchId ?? 0L;
+        Original.Text = movement.Id.ToString(CultureInfo.InvariantCulture);
+        Price.Text = Discount.Text = "0";
+        MovementDetails.IsExpanded = false;
+        Quantity.Clear();
+        Quantity.Focus();
+        Status.Text = $"مردود من الفاتورة {invoice.Number} · أدخل الكمية ثم أضف السطر.";
+    });
     private int page;
     private StockHistoryFilter? historyFilter;
     private Guid source=Guid.NewGuid();
@@ -88,6 +141,7 @@ public partial class StockWindow : Window
         Bind(BaseUnit,units);Bind(ExtraUnit,units);Bind(PriceUnit,units);
         var items=products.Select(x=>new Choice(x.Id,x.Code+" · "+x.Name));
         Bind(Item,items);Bind(SetupProduct,items);
+        Catalog.ItemsSource = products;
         FilterProducts();
         Bind(HistoryProduct,new[]{new Choice(0,"الكل")}.Concat(items));
         Bind(HistoryWarehouse,new[]{new Choice(0,"الكل")}.Concat(ws));
@@ -161,13 +215,13 @@ public partial class StockWindow : Window
     }
     private void NewDocument(object sender,RoutedEventArgs e)
     {
-        if(!Discard())return;current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
+        if(!Discard())return;Original.Clear();current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
         InvoiceCurrency.SelectedValue=currency;InvoiceRate.Text="1";Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
     }
     private async void AddLine(object sender,RoutedEventArgs e)=>await Run(()=> {
         if(current?.State is 2 or 3)return Task.CompletedTask;
         var line=new StockLine(Id(Item),Id(Unit),Number(Quantity),Number(Price),Number(Discount),Batch.SelectedValue is long b && b>0?b:null,
-            string.IsNullOrWhiteSpace(Reason.Text)?null:Reason.Text.Trim(),string.IsNullOrWhiteSpace(Original.Text)?null:long.Parse(Original.Text,CultureInfo.InvariantCulture));
+            string.IsNullOrWhiteSpace(Reason.Text)?null:Reason.Text.Trim(),Id(Kind) is not (4 or 5) || string.IsNullOrWhiteSpace(Original.Text)?null:long.Parse(Original.Text,CultureInfo.InvariantCulture));
         rows.Add(new(line,Product(line.ProductId),UnitName(line.UnitId)));return Task.CompletedTask;
     });
     private void RemoveLine(object sender,RoutedEventArgs e){if(current?.State is not (2 or 3) && Lines.SelectedItem is DisplayLine row)rows.Remove(row);}
@@ -254,7 +308,20 @@ public partial class StockWindow : Window
     private async void SetPrice(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.SetPriceAsync(actor,Id(SetupProduct),Id(PriceUnit),Id(PriceCurrency),SetupTier.Text,Number(SetupPrice)));Status.Text="تم حفظ السعر.";});
     private async void CreateProduct(object sender,RoutedEventArgs e)=>await Run(async()=>{
         var id=await Use(s=>s.CreateProductAsync(actor,new(Code.Text,ProductName.Text,Id(BaseUnit),Method.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase,Tracked.IsChecked==true,ServiceItem.IsChecked!=true)));
-        await LoadLookups();SetupProduct.SelectedValue=id;Status.Text="تم إنشاء الصنف ووحدة الأساس.";
+        await LoadLookups();
+        SetupProduct.SelectedValue = id;
+        Code.Clear();
+        ProductName.Clear();
+        if (returnToInvoice)
+        {
+            returnToInvoice = false;
+            Item.SelectedValue = id;
+            await LineOptions();
+            Unit.SelectedValue = Id(BaseUnit);
+            Tabs.SelectedItem = InvoiceTab;
+            Quantity.Focus();
+        }
+        Status.Text = "تم إنشاء الصنف ووحدة الأساس.";
     });
     private async void ChangeMethod(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.ChangeCostMethodAsync(actor,Id(SetupProduct),ExistingMethod.SelectedIndex==0?CostMethod.WeightedAverage:CostMethod.LastPurchase));await LoadLookups();Status.Text="حفظت طريقة التكلفة.";});
     private async void CreateUnit(object sender,RoutedEventArgs e)=>await Run(async()=>{await Change(s=>s.AddUnitAsync(actor,Id(SetupProduct),Id(ExtraUnit),Number(Factor)));await LineOptions();Status.Text="حفظ تحويل الوحدة.";});

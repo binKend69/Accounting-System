@@ -59,6 +59,7 @@
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE7A7;" CommandParameter="PurchaseReturn" Content="مردود شراء" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE7A6;" CommandParameter="SalesReturn" Content="مردود بيع" Click="HomeAction_Click"/>
                                 <Button Style="{StaticResource HomeAction}" Tag="&#xE9F9;" CommandParameter="balances" Content="أرصدة المخزون" Click="HomeAction_Click"/>
+                                <Button Style="{StaticResource HomeAction}" Tag="&#xE8C7;" CommandParameter="cash" Content="أرصدة الخزائن" Click="HomeAction_Click"/>
                                 <Button x:Name="HomeJournalButton" Style="{StaticResource HomeAction}" Tag="&#xE70F;" CommandParameter="JOURNAL_VOUCHER" Content="سند قيد" Click="HomeAction_Click"/>
                             </WrapPanel>
                         </ScrollViewer>
@@ -91,6 +92,28 @@
                 </TabItem>
                 <TabItem Name="AdministrationTab" Header="الإدارة"><Button Content="إدارة المراجع والصلاحيات" Click="Administration_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"/></TabItem>
                 <TabItem Header="المبيعات والمخزون"><StackPanel Margin="24" HorizontalAlignment="Right"><TextBlock Text="فواتير الفرع وحركة المخزون" FontSize="22"/><Button Content="فتح المبيعات والمشتريات والمخزون" Click="StockWindow_Click" Margin="0,12"/></StackPanel></TabItem>
+                <TabItem x:Name="CashTab" Header="أرصدة الخزائن">
+                    <DockPanel Margin="16">
+                        <StackPanel DockPanel.Dock="Top">
+                            <TextBlock Text="أرصدة الصناديق النشطة" FontSize="23" FontWeight="SemiBold"/>
+                            <WrapPanel Margin="0,12">
+                                <Label Content="حتى تاريخ" Target="{Binding ElementName=CashDate}"/>
+                                <DatePicker x:Name="CashDate" SelectedDateChanged="ClearCashReport"/>
+                                <Label Content="عملة الحساب" Target="{Binding ElementName=CashCurrency}"/>
+                                <ComboBox x:Name="CashCurrency" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="ClearCashReport"/>
+                                <Button Content="عرض الأرصدة" Click="RefreshCash"/>
+                            </WrapPanel>
+                        </StackPanel>
+                        <DataGrid x:Name="CashGrid" IsReadOnly="True" CanUserAddRows="False" AutoGenerateColumns="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="الصندوق" Binding="{Binding Name}" Width="2*"/>
+                                <DataGridTextColumn Header="مدين" Binding="{Binding Debit}" Width="*"/>
+                                <DataGridTextColumn Header="دائن" Binding="{Binding Credit}" Width="*"/>
+                                <DataGridTextColumn Header="الرصيد بعملة الحساب" Binding="{Binding Balance}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </TabItem>
                 <TabItem x:Name="AccountsTab" Header="الحسابات والإعداد المالي"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="20" MaxWidth="760" HorizontalAlignment="Right">
                     <TextBlock Text="إنشاء حساب للفرع المحدد" FontSize="22" Margin="0,0,0,12"/>
                     <WrapPanel><TextBox x:Name="AccountCode" Width="160" ToolTip="رمز الحساب" AutomationProperties.Name="رمز الحساب"/><TextBox x:Name="AccountName" Width="260" ToolTip="اسم الحساب" AutomationProperties.Name="اسم الحساب"/></WrapPanel>
