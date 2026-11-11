@@ -8,7 +8,7 @@ public sealed record ProductInfo(int Id, string Code, string Name, int BaseUnitI
 public sealed record ProductUnitInfo(int ProductId, int UnitId, decimal Factor);
 public sealed record BatchInfo(long Id, int ProductId, int WarehouseId, string Code, DateOnly Expiry);
 public sealed record StockLine(int ProductId, int UnitId, decimal Quantity, decimal UnitPrice = 0m,
-    decimal Discount = 0m, long? BatchId = null, string? BatchOverrideReason = null, long? OriginalMovementId = null, bool PrintInKitchen = false);
+    decimal Discount = 0m, long? BatchId = null, string? BatchOverrideReason = null, long? OriginalMovementId = null, bool PrintInKitchen = false, decimal ShippingWeight = 0);
 public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocumentKind Kind, DateOnly Date,
     int WarehouseId, int? TargetWarehouseId, int CurrencyId, decimal RateToBase, int CounterpartyAccountId,
     bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false)
@@ -16,8 +16,10 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
     public CustomsDeclaration? Customs { get; init; }
 }
 public sealed record CustomsDeclaration(int VehicleCount, string VehicleNumber, string Country, string Goods, int DeclarationType,
-    IReadOnlyList<CustomsCharge> Charges);
-public sealed record CustomsCharge(int AccountId, decimal Amount);
+    IReadOnlyList<CustomsCharge> Charges, long? PurchaseId = null);
+public enum FeeTreatment { InventoryByValue = 1, InventoryByWeight = 2, Expense = 3, RecoverableTax = 4 }
+public sealed record CustomsCharge(int AccountId, decimal Amount, FeeTreatment? Treatment = null);
+public sealed record CustomsFeeRule(int AccountId, FeeTreatment Treatment);
 public sealed record PosDepartment(int Id, string Name, string? Color, int DisplayOrder);
 public sealed record InventoryAccounts(int StockAccountId, int SalesAccountId, int CostAccountId,
     int AdjustmentAccountId, int InputTaxAccountId, int OutputTaxAccountId, int? FxGainAccountId = null, int? FxLossAccountId = null, LastPurchaseBookPolicy BookPolicy = LastPurchaseBookPolicy.KeepAcquisitionValue, int? SalesReturnsAccountId = null);
@@ -36,6 +38,7 @@ public sealed record DebtPayment(Guid SourceKey, long InvoiceId, DateOnly Date, 
 
 public sealed record StockLookups(IReadOnlyList<InventoryReference> Warehouses, IReadOnlyList<InventoryReference> Units, InventoryAccounts? Accounts)
 {
+    public IReadOnlyList<CustomsFeeRule> FeeRules { get; init; } = [];
     public IReadOnlyList<PosDepartment> Departments { get; init; } = [];
 }
 
@@ -55,6 +58,7 @@ public interface IStockDocumentService
     Task<StockLookups> LookupsAsync(int actor, int branchId, CancellationToken ct = default);
     Task<int> CreateProductAsync(int actor, ProductDefinition product, CancellationToken ct = default);
     Task SetCurrencyPrecisionAsync(int actor, int currencyId, int precision, CancellationToken ct = default);
+    Task ConfigureFeeAsync(int actor, int branch, int account, FeeTreatment treatment, CancellationToken ct = default);
     Task SetCashierProductAsync(int actor, int productId, int? departmentId, bool printInKitchen, CancellationToken ct = default);
     Task SetDepartmentAppearanceAsync(int actor, int departmentId, string color, int order, CancellationToken ct = default);
     Task SetBarcodeAsync(int actor,int productId,int unitId,string barcode,CancellationToken ct=default);

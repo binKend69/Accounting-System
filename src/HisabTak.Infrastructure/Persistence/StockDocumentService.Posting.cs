@@ -18,6 +18,7 @@ public sealed partial class StockDocumentService
         StockDocumentKind.Purchase => d.Credit?"PURCHASE_CREDIT":"PURCHASE_CASH",
         StockDocumentKind.SalesReturn => d.Credit?"SALES_RETURN_CREDIT":"SALES_RETURN_CASH",
         StockDocumentKind.PurchaseReturn => d.Credit?"PURCHASE_RETURN_CREDIT":"PURCHASE_RETURN_CASH",
+        StockDocumentKind.CustomsClearance => "CUSTOMS_CLEARANCE",
         StockDocumentKind.Transfer => "STOCK_TRANSFER", StockDocumentKind.Opening => "OPENING_BALANCE",
         StockDocumentKind.Increase => "STOCK_ADJUST_INCREASE", StockDocumentKind.Decrease => "STOCK_ADJUST_DECREASE",
         _ => throw new ArgumentOutOfRangeException(nameof(d))
@@ -105,10 +106,12 @@ public sealed partial class StockDocumentService
             throw new InvalidOperationException("Return must reference the original invoice movement and party.");
         var used=(await Rows("""
             SELECT COALESCE(SUM(COALESCE(m.BilledQuantity,ABS(m.Quantity))),0),COALESCE(SUM(ABS(m.Value)),0),COALESCE(SUM(m.Net),0),COALESCE(SUM(m.Tax),0)
-            FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId WHERE h.State<>3 AND OriginalMovementId=@i
+            FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId WHERE h.State<>3 AND h.Kind<>11 AND OriginalMovementId=@i
             """,r=>(r.GetDecimal(0),r.GetDecimal(1),r.GetDecimal(2),r.GetDecimal(3)),ct,("@i",orig.Id))).Single();
         decimal Part(decimal total,decimal usedValue,int scale)=>StockCalculation.Allocate(total,orig.BilledQuantity??Math.Abs(orig.Quantity),qty,used.Item1,usedValue,scale);
-        return (orig,owner,Part(Math.Abs(orig.Value),used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
+        var landed = (await Rows("SELECT COALESCE(SUM(m.Value),0) FROM dbo.StockMovements m JOIN dbo.StockDocuments d ON d.DocumentId=m.DocumentId WHERE m.OriginalMovementId=@i AND d.Kind=11 AND d.State=2",
+            r=>r.GetDecimal(0),ct,("@i",orig.Id))).Single();
+        return (orig,owner,Part(Math.Abs(orig.Value)+landed,used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
     }
     private sealed record LineEffect(decimal Net,decimal Tax,decimal Cost,decimal Revaluation,long? Invoice);
     private async Task<LineEffect> ApplyLine(int actor,StockDocument document,int index,int precision,int currencyPrecision,LastPurchaseBookPolicy bookPolicy,CancellationToken ct)
@@ -175,7 +178,6 @@ public sealed partial class StockDocumentService
     {
             var doc=await Read(id,ct); var d=doc.Draft;
             await Branch(actor,d.BranchId,ct);
-            if (d.Kind == StockDocumentKind.CustomsClearance) throw new InvalidOperationException("Customs fee posting policy is pending.");
             if (IsIntent(d.Kind)) throw new InvalidOperationException("Convert the intent to an invoice before posting.");
             if(doc.State!=1)
             {
@@ -195,7 +197,7 @@ public sealed partial class StockDocumentService
             var baseId=config.Item3;
             if(d.CurrencyId==baseId && d.RateToBase!=1) throw new InvalidOperationException("Base currency requires identity rate.");
             var currencyPrecision=await CurrencyPrecision(d.CurrencyId,baseId,precision,ct);
-            if(!IsTrade(d.Kind) && (d.CurrencyId!=baseId || d.RateToBase!=1)) throw new InvalidOperationException("Internal movements are valued in base currency.");
+            if(d.Customs == null && !IsTrade(d.Kind) && (d.CurrencyId!=baseId || d.RateToBase!=1)) throw new InvalidOperationException("Internal movements are valued in base currency.");
             if(IsTrade(d.Kind))
             {
                 bool sale=d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn;
@@ -204,14 +206,16 @@ public sealed partial class StockDocumentService
                     throw new InvalidOperationException("Counterparty cannot also be a mapped stock account.");
             }
             var effects=new List<LineEffect>();
-            for(var i=0;i<d.Lines.Count;i++) effects.Add(await ApplyLine(actor,doc,i,precision,currencyPrecision,a.BookPolicy,ct));
+            for(var i=0;d.Customs == null && i<d.Lines.Count;i++) effects.Add(await ApplyLine(actor,doc,i,precision,currencyPrecision,a.BookPolicy,ct));
             var net=effects.Sum(e=>e.Net); var tax=effects.Sum(e=>e.Tax); var cost=effects.Sum(e=>e.Cost);
             var lines=new List<JournalLineDefinition>();
             void Debit(int account,decimal signed,bool inInvoiceCurrency=false)
             {
                 if(signed!=0) lines.Add(new(account,signed>0?JournalSide.Debit:JournalSide.Credit,new(new(Math.Abs(signed),inInvoiceCurrency?d.CurrencyId:baseId),baseId,inInvoiceCurrency?d.RateToBase:1,d.Date)));
             }
-            if(d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn)
+            if (d.Customs != null)
+                await PostClearance(doc, a, precision, currencyPrecision, baseId, lines, ct);
+            else if(d.Kind is StockDocumentKind.Sale or StockDocumentKind.SalesReturn)
             {
                 int sign=d.Kind==StockDocumentKind.Sale?1:-1;
                 Debit(d.CounterpartyAccountId,sign*(net+tax),true); Debit(d.Kind==StockDocumentKind.SalesReturn?a.SalesReturnsAccountId!.Value:a.SalesAccountId,-sign*net*d.RateToBase); Debit(a.OutputTaxAccountId,-sign*tax*d.RateToBase);

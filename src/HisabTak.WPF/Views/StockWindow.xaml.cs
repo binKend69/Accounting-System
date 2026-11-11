@@ -116,6 +116,8 @@ public partial class StockWindow : Window
         busy=true; Tabs.IsEnabled=false; PosCommands.IsEnabled=false;
         try { await work(); }
         catch(UnauthorizedAccessException){Status.Text="لا تملك صلاحية هذه العملية في الفرع.";}
+        catch(InvalidOperationException ex) when (ex.Message == "Later movements require a landed cost adjustment.") { Status.Text = "حدثت حركة مخزنية لاحقة لهذا الصنف. يتطلب توزيع الرسم تسوية تكلفة للمخزون والبضاعة المصروفة."; }
+        catch(InvalidOperationException ex) when (ex.Message == "Review customs fee rules.") { Status.Text = "حدد قاعدة الحساب ثم أعد إضافة الرسم غير المصنف أو الذي تغير تصنيفه قبل الترحيل."; }
         catch(DocumentConflictException){Status.Text=slotNumber == 0 ? "تغيرت النسخة المحفوظة. افتح المستند مجددًا من السجل." : "تغيرت الخانة في جلسة أخرى. اختر استعادة آخر حفظ."; }
         catch(Exception e) when(e is ArgumentException or FormatException or OverflowException){Status.Text="راجع الاختيارات والأرقام والتاريخ. استخدم النقطة للفاصل العشري.";}
         catch(InvalidOperationException e) when(e.Message.Contains("sales returns account",StringComparison.Ordinal)){Status.Text="حدد حساب مردودات المبيعات المستقل في إعداد الفرع قبل الترحيل.";}
@@ -188,7 +190,7 @@ public partial class StockWindow : Window
     {
         var kind=(StockDocumentKind)Id(Kind);
         var trade=kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder or StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
-        return new StockDocumentDraft(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),trade?Id(Party):0,
+        return new StockDocumentDraft(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),kind==StockDocumentKind.CustomsClearance ? Party.SelectedValue as int? ?? 0 : trade?Id(Party):0,
             trade && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true) { Customs = kind == StockDocumentKind.CustomsClearance ? ReadDeclaration() : null };
     }
     private bool Dirty()
@@ -204,10 +206,11 @@ public partial class StockWindow : Window
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
         PrintSaleButton.Visibility = KitchenCopyButton.Visibility = current is { State: 2, Draft.Kind: StockDocumentKind.Sale } ? Visibility.Visible : Visibility.Collapsed;
+        CustomsFields.IsEnabled = current?.State is null or 1;
         var intent = current?.Draft.Kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder;
         ConvertButton.Visibility = intent ? Visibility.Visible : Visibility.Collapsed;
         ConvertButton.Content = current?.ConvertedInvoiceId != null ? "فتح الفاتورة المرتبطة" : "تحويل إلى مسودة فاتورة";
-        PostButton.IsEnabled = current?.State == 1 && !intent && current.Draft.Kind != StockDocumentKind.CustomsClearance;
+        PostButton.IsEnabled = current?.State == 1 && !intent ;
         if (current?.ConvertedInvoiceId != null) SaveButton.IsEnabled = false;
         AddStockLineButton.IsEnabled = SaveButton.IsEnabled;
         foreach(var control in new Control[]{Warehouse,Target,Party,InvoiceCurrency,InvoiceRate,Credit,EntryDate,TaxEnabled,TaxRate,Inclusive,Item,Unit,Quantity,Price,Discount,Batch,Original,Reason})control.IsEnabled=SaveButton.IsEnabled;
@@ -254,7 +257,8 @@ public partial class StockWindow : Window
             Row($"{(declaration.DeclarationType == 1 ? "استيراد" : "تصدير")} · بلد المنشأ {declaration.Country} · البضاعة {declaration.Goods}");
             Row($"وسائل النقل {declaration.VehicleCount} · القاطرة {declaration.VehicleNumber}");
             foreach (var fee in declaration.Charges)
-                Row($"رسم · {accounts.FirstOrDefault(a => a.Id == fee.AccountId)?.Label ?? fee.AccountId.ToString()} · {fee.Amount:G29}");
+                Row($"{FeeLabel(fee.Treatment)} · {accounts.FirstOrDefault(a => a.Id == fee.AccountId)?.Label ?? fee.AccountId.ToString()} · {fee.Amount:G29}");
+            if (declaration.PurchaseId.HasValue) Row($"فاتورة الشراء الأصلية · سجل {declaration.PurchaseId}");
             Row($"إجمالي الرسوم المسجلة {declaration.Charges.Sum(f => f.Amount):G29}");
         }
         if(d.CounterpartyAccountId>0)Row("حساب الطرف · "+(accounts.FirstOrDefault(a=>a.Id==d.CounterpartyAccountId)?.Label??d.CounterpartyAccountId.ToString()));

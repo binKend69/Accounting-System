@@ -40,6 +40,46 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
     [SqlServerFact]
+    public async Task Classified_clearance_posts_only_fees_and_reverses_without_changing_purchased_quantity()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var store = await StoreAsync(test);
+        var owner = store.F.Owner;
+        var branch = store.F.Branch;
+        Task<StockDocument> Run(Func<IStockDocumentService,Task<StockDocument>> fn) => With<IStockDocumentService,StockDocument>(test,fn);
+        var second = await With<IStockDocumentService,int>(test,s=>s.CreateProductAsync(owner,new("002","Second",store.Unit,CostMethod.WeightedAverage,false)));
+        var purchase = await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,
+            new StockLine(store.Product,store.Unit,10,60),new StockLine(second,store.Unit,10,40)));
+        var config = (await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(owner,branch))).Accounts!;
+        var charges = new[] {
+            new CustomsCharge(config.AdjustmentAccountId,100,FeeTreatment.InventoryByValue),
+            new CustomsCharge(config.SalesAccountId,20,FeeTreatment.InventoryByWeight),
+            new CustomsCharge(config.CostAccountId,8,FeeTreatment.Expense),
+            new CustomsCharge(config.InputTaxAccountId,5,FeeTreatment.RecoverableTax)
+        };
+        foreach (var charge in charges)
+            await Change<IStockDocumentService>(test,s=>s.ConfigureFeeAsync(owner,branch,charge.AccountId,charge.Treatment!.Value));
+        var lines = purchase.Draft.Lines.Select((l,i)=>l with { ShippingWeight=i==0?1:3 }).ToArray();
+        var draft = Draft(store,StockDocumentKind.CustomsClearance,store.Cash,lines) with
+        { Customs = new(1,"L5","YE","Parts",1,charges,purchase.Id) };
+        var saved = await Run(s=>s.SaveAsync(owner,draft));
+        var posted = await Run(s=>s.PostAsync(owner,saved.Id,saved.Version));
+        Assert.Equal(posted.JournalId,(await Run(s=>s.PostAsync(owner,saved.Id,saved.Version))).JournalId);
+        var balances = await Stock(test,store,Date);
+        Assert.Equal(665,balances.Single(b=>b.ProductId==store.Product).BookValue);
+        Assert.Equal(455,balances.Single(b=>b.ProductId==second).BookValue);
+        Assert.Equal(20,balances.Sum(b=>b.Quantity));
+        await using var db = test.Context();
+        Task<decimal> SignedAmount(int account) => db.Database.SqlQuery<decimal>(
+            $"SELECT SUM(CASE WHEN Side=1 THEN Amount ELSE -Amount END) AS Value FROM dbo.JournalLines WHERE JournalEntryId={posted.JournalId!.Value} AND AccountId={account}").SingleAsync();
+        Assert.Equal(-133,await SignedAmount(store.Cash));
+        Assert.Equal(8,await SignedAmount(config.CostAccountId));
+        Assert.Equal(5,await SignedAmount(config.InputTaxAccountId));
+        await Run(s=>s.ReverseAsync(owner,posted.Id,Date,Guid.NewGuid()));
+        Assert.Equal(1000,(await Stock(test,store,Date)).Sum(b=>b.BookValue));
+    }
+
+    [SqlServerFact]
     public async Task Customs_draft_roundtrips_without_posting_and_rejects_fees_on_other_kinds()
     {
         await using var test = await SqlTestDatabase.CreateAsync();

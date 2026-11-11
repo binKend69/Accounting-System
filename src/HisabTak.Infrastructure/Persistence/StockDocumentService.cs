@@ -204,6 +204,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         var settings=(await Rows("SELECT Payload FROM dbo.StockAccountSettings WHERE BranchId=@b",r=>JsonSerializer.Deserialize<InventoryAccounts>(r.GetString(0)),ct,("@b",branchId))).SingleOrDefault();
         return new(warehouses,units,settings)
         {
+            FeeRules = await FeeRules(branchId, ct),
             Departments = await db.Departments.Where(x => x.IsActive).OrderBy(x => x.DisplayOrder).ThenBy(x => x.NameAr)
                 .Select(x => new PosDepartment(x.Id, x.NameAr, x.ColorHex, x.DisplayOrder)).ToListAsync(ct)
         };
@@ -244,7 +245,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         await Branch(actor,d.BranchId,ct);
         await Warehouse(d.BranchId,d.WarehouseId,ct);
         if(d.TargetWarehouseId is int target) await Warehouse(d.BranchId,target,ct);
-        if(d.SourceKey==Guid.Empty || !Enum.IsDefined(d.Kind) || d.Lines.Count is <1 or >500 || d.CurrencyId<=0 || d.RateToBase<=0 ||
+        if(d.SourceKey==Guid.Empty || !Enum.IsDefined(d.Kind) || (d.Lines.Count > 500 || d.Lines.Count == 0 && d.Kind != StockDocumentKind.CustomsClearance) || d.CurrencyId<=0 || d.RateToBase<=0 ||
             (d.Kind==StockDocumentKind.Transfer)!=(d.TargetWarehouseId!=null) || d.TargetWarehouseId==d.WarehouseId)
             throw new ArgumentException("Invalid stock document.");
         if ((d.Kind == StockDocumentKind.CustomsClearance) != (d.Customs != null))
@@ -258,8 +259,8 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
                 throw new ArgumentException("Invalid customs declaration.");
             foreach (var charge in declaration.Charges)
             {
-                if (charge.Amount <= 0 || !await db.Accounts.AnyAsync(x => x.Id == charge.AccountId && x.IsActive &&
-                    x.BranchId == d.BranchId && x.CurrencyId == d.CurrencyId, ct))
+                if (charge.Treatment.HasValue && !Enum.IsDefined(charge.Treatment.Value) || charge.Amount <= 0 || !await db.Accounts.AnyAsync(x => x.Id == charge.AccountId && x.IsActive &&
+                    x.BranchId == d.BranchId && !x.IsSuspended, ct))
                     throw new ArgumentException("Invalid customs fee or account.");
                 StockCalculation.Exact(charge.Amount, 2);
             }
@@ -273,6 +274,8 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             if(l.ProductId<=0 || l.UnitId<=0 || l.Quantity<=0 || l.UnitPrice<0 || l.Discount<0 || (l.OriginalMovementId!=null)!=returns ||
                 (l.BatchOverrideReason?.Length??0)>300 || returns && (l.UnitPrice!=0 || l.Discount!=0))
                 throw new ArgumentException("Invalid stock line or original reference.");
+            if (l.ShippingWeight < 0 || d.Customs == null && l.ShippingWeight != 0) throw new ArgumentException("Invalid shipping weight.");
+            StockCalculation.Exact(l.ShippingWeight,8);
             StockCalculation.Exact(l.Quantity,8); StockCalculation.Exact(l.UnitPrice,8); StockCalculation.Exact(l.Discount,8);
         }
     }
