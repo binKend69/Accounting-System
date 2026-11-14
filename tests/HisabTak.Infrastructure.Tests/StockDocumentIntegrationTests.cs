@@ -40,6 +40,32 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
     [SqlServerFact]
+    public async Task Late_fee_handles_returns_before_and_after_adjustment_and_can_reverse()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var store = await StoreAsync(test);
+        var owner = store.F.Owner;
+        Task<StockDocument> Run(Func<IStockDocumentService,Task<StockDocument>> action) => With<IStockDocumentService,StockDocument>(test,action);
+        var purchase = await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+        var sale = await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,4,40)));
+        await Trade(test,store,Draft(store,StockDocumentKind.SalesReturn,store.Cash,new StockLine(store.Product,store.Unit,1,OriginalMovementId:sale.Movements[0].Id)));
+        var settings = (await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(owner,store.F.Branch))).Accounts!;
+        await Change<IStockDocumentService>(test,s=>s.ConfigureFeeAsync(owner,store.F.Branch,settings.AdjustmentAccountId,FeeTreatment.InventoryByValue));
+        var draft = Draft(store,StockDocumentKind.CustomsClearance,store.Cash,purchase.Draft.Lines.ToArray()) with
+        { Date=Date.AddDays(1), Customs = new(1,"Truck","YE","Parts",1,[new(settings.AdjustmentAccountId,50,FeeTreatment.InventoryByValue)],purchase.Id) };
+        var saved = await Run(s=>s.SaveAsync(owner,draft));
+        var fee = await Run(s=>s.PostAsync(owner,saved.Id,saved.Version));
+        Assert.Equal(140,Assert.Single(await Stock(test,store,Date)).BookValue);
+        Assert.Equal(175,Assert.Single(await Stock(test,store,Date.AddDays(1))).BookValue);
+        await Run(s=>s.ReverseAsync(owner,fee.Id,Date.AddDays(1),Guid.NewGuid()));
+        Assert.Equal(140,Assert.Single(await Stock(test,store,Date.AddDays(1))).BookValue);
+        var second = await Run(s=>s.SaveAsync(owner,draft with { SourceKey=Guid.NewGuid() }));
+        await Run(s=>s.PostAsync(owner,second.Id,second.Version));
+        await Trade(test,store,Draft(store,StockDocumentKind.SalesReturn,store.Cash,new StockLine(store.Product,store.Unit,3,OriginalMovementId:sale.Movements[0].Id)) with {Date=Date.AddDays(1)});
+        Assert.Equal(250,Assert.Single(await Stock(test,store,Date.AddDays(1))).BookValue);
+    }
+
+    [SqlServerFact]
     public async Task Late_credit_clearance_splits_sold_cost_and_stock_and_settles_once()
     {
         await using var test = await SqlTestDatabase.CreateAsync();
