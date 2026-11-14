@@ -40,6 +40,38 @@ public sealed partial class LedgerIntegrationTests
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
     [SqlServerFact]
+    public async Task Late_credit_clearance_splits_sold_cost_and_stock_and_settles_once()
+    {
+        await using var test = await SqlTestDatabase.CreateAsync();
+        var store = await StoreAsync(test);
+        var owner = store.F.Owner;
+        Task<StockDocument> Run(Func<IStockDocumentService,Task<StockDocument>> action) => With<IStockDocumentService,StockDocument>(test,action);
+        var purchase = await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+        var sale = await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,4,40)));
+        var settings = (await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(owner,store.F.Branch))).Accounts!;
+        await Change<IStockDocumentService>(test,s=>s.ConfigureFeeAsync(owner,store.F.Branch,settings.AdjustmentAccountId,FeeTreatment.InventoryByValue));
+        var draft = Draft(store,StockDocumentKind.CustomsClearance,store.Supplier,purchase.Draft.Lines.ToArray()) with
+        { Customs = new(1,"Truck","YE","Parts",1,[new(settings.AdjustmentAccountId,50,FeeTreatment.InventoryByValue)],purchase.Id) };
+        var saved = await Run(s=>s.SaveAsync(owner,draft));
+        var posted = await Run(s=>s.PostAsync(owner,saved.Id,saved.Version));
+        Assert.Equal(posted.Id,(await Run(s=>s.PostAsync(owner,saved.Id,saved.Version))).Id);
+        Assert.Equal(150,Assert.Single(await Stock(test,store,Date)).BookValue);
+        Assert.Equal(6,Assert.Single(await Stock(test,store,Date)).Quantity);
+        Assert.Equal(50,Assert.Single(await Debts(test,store)).RemainingAmount);
+        await using var db = test.Context();
+        var cost = await db.Database.SqlQuery<decimal>(
+            $"SELECT SUM(CASE WHEN Side=1 THEN Amount ELSE -Amount END) AS Value FROM dbo.JournalLines WHERE JournalEntryId={posted.JournalId!.Value} AND AccountId={settings.CostAccountId}").SingleAsync();
+        Assert.Equal(20,cost);
+        await Trade(test,store,Draft(store,StockDocumentKind.SalesReturn,store.Cash,new StockLine(store.Product,store.Unit,1,OriginalMovementId:sale.Movements[0].Id)));
+        Assert.Equal(175,Assert.Single(await Stock(test,store,Date)).BookValue);
+        var payment = new DebtPayment(Guid.NewGuid(),posted.Id,Date,50,store.Cash);
+        var paid = await With<IStockDocumentService,long>(test,s=>s.SettleAsync(owner,payment));
+        Assert.Equal(paid,await With<IStockDocumentService,long>(test,s=>s.SettleAsync(owner,payment)));
+        Assert.Equal(0,Assert.Single(await Debts(test,store)).RemainingAmount);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>Run(s=>s.ReverseAsync(owner,posted.Id,Date,Guid.NewGuid())));
+    }
+
+    [SqlServerFact]
     public async Task Classified_clearance_posts_only_fees_and_reverses_without_changing_purchased_quantity()
     {
         await using var test = await SqlTestDatabase.CreateAsync();

@@ -267,7 +267,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
         }
         bool returns=d.Kind is StockDocumentKind.SalesReturn or StockDocumentKind.PurchaseReturn;
         bool trade=IsIntent(d.Kind) || returns || d.Kind is StockDocumentKind.Purchase or StockDocumentKind.Sale;
-        if(!trade && (d.Credit || d.TaxEnabled) || d.TaxRate is <0 or >1 || !d.TaxEnabled && (d.TaxRate!=0 || d.PricesIncludeTax))
+        if(d.Customs != null && d.TaxEnabled || !trade && ((d.Credit && d.Customs == null) || d.TaxEnabled) || d.TaxRate is <0 or >1 || !d.TaxEnabled && (d.TaxRate!=0 || d.PricesIncludeTax))
             throw new ArgumentException("Invalid tax or credit selection.");
         foreach(var l in d.Lines)
         {

@@ -48,7 +48,7 @@ public sealed partial class StockDocumentService
     }
     private async Task RecordDebt(StockDocument doc,List<LineEffect> effects,long journal,List<ReturnOffset> offsets,int precision,CancellationToken ct)
     {
-        var d=doc.Draft; var total=effects.Sum(x=>x.Net+x.Tax);
+        var d=doc.Draft; var total=d.Customs?.Charges.Sum(f=>f.Amount) ?? effects.Sum(x=>x.Net+x.Tax);
         if(!IsReturn(d.Kind))
         {
             if(d.Kind==StockDocumentKind.Sale)

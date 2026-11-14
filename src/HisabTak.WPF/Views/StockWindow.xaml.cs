@@ -191,7 +191,7 @@ public partial class StockWindow : Window
         var kind=(StockDocumentKind)Id(Kind);
         var trade=kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder or StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
         return new StockDocumentDraft(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),kind==StockDocumentKind.CustomsClearance ? Party.SelectedValue as int? ?? 0 : trade?Id(Party):0,
-            trade && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true) { Customs = kind == StockDocumentKind.CustomsClearance ? ReadDeclaration() : null };
+            (trade || kind==StockDocumentKind.CustomsClearance) && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true) { Customs = kind == StockDocumentKind.CustomsClearance ? ReadDeclaration() : null };
     }
     private bool Dirty()
     {

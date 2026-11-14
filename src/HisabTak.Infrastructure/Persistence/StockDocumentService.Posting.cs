@@ -111,7 +111,7 @@ public sealed partial class StockDocumentService
         decimal Part(decimal total,decimal usedValue,int scale)=>StockCalculation.Allocate(total,orig.BilledQuantity??Math.Abs(orig.Quantity),qty,used.Item1,usedValue,scale);
         var landed = (await Rows("SELECT COALESCE(SUM(m.Value),0) FROM dbo.StockMovements m JOIN dbo.StockDocuments d ON d.DocumentId=m.DocumentId WHERE m.OriginalMovementId=@i AND d.Kind=11 AND d.State=2",
             r=>r.GetDecimal(0),ct,("@i",orig.Id))).Single();
-        return (orig,owner,Part(Math.Abs(orig.Value)+landed,used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
+        return (orig,owner,Part(Math.Abs(orig.Value)+(orig.Quantity<0?-landed:landed),used.Item2,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
     }
     private sealed record LineEffect(decimal Net,decimal Tax,decimal Cost,decimal Revaluation,long? Invoice);
     private async Task<LineEffect> ApplyLine(int actor,StockDocument document,int index,int precision,int currencyPrecision,LastPurchaseBookPolicy bookPolicy,CancellationToken ct)
