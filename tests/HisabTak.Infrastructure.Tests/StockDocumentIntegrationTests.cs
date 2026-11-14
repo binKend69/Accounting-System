@@ -63,12 +63,12 @@ public sealed partial class LedgerIntegrationTests
         await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.StockAccountSettings SET Payload=JSON_MODIFY(Payload,'$.BookPolicy',2)");
         var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
         var next=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
-        await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.StockDocuments SET BookPolicyAtPosting=NULL");
+        await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("DISABLE TRIGGER dbo.TR_StockDocuments_Lifecycle ON dbo.StockDocuments; UPDATE dbo.StockDocuments SET BookPolicyAtPosting=NULL; ENABLE TRIGGER dbo.TR_StockDocuments_Lifecycle ON dbo.StockDocuments;");
         // Equal-price legacy receipts have no revaluation evidence. Do not silently pick a policy.
         await Assert.ThrowsAsync<InvalidOperationException>(()=>AddClearance(test,store,purchase,50));
         Assert.Equal(400,Assert.Single(await Stock(test,store,Date)).BookValue);
         // A recorded policy resolves the ambiguity; a later receipt resets valuation to its price.
-        await using(var db=test.Context()) await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.StockDocuments SET BookPolicyAtPosting=2 WHERE DocumentId={next.Id}");
+        await using(var db=test.Context()) await db.Database.ExecuteSqlInterpolatedAsync($"DISABLE TRIGGER dbo.TR_StockDocuments_Lifecycle ON dbo.StockDocuments; UPDATE dbo.StockDocuments SET BookPolicyAtPosting=2 WHERE DocumentId={next.Id}; ENABLE TRIGGER dbo.TR_StockDocuments_Lifecycle ON dbo.StockDocuments;");
         await AddClearance(test,store,purchase,50);
         Assert.Equal(400,Assert.Single(await Stock(test,store,Date)).BookValue);
     }
