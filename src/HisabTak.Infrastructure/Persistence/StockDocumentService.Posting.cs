@@ -47,13 +47,13 @@ public sealed partial class StockDocumentService
             FROM dbo.StockMovements m JOIN dbo.StockDocuments d ON d.DocumentId=m.DocumentId WHERE d.State<>3 AND m.ProductId=@p AND m.WarehouseId=@w
             """,r=>new StockPosition(r.GetDecimal(0),r.GetDecimal(1),r.GetDecimal(2)),ct,("@p",product),("@w",warehouse))).Single();
     }
-    private async Task AddMovement(long id,int line,int product,int warehouse,long? batch,decimal qty,decimal value,decimal net,decimal tax,long? original,decimal? last,CancellationToken ct,decimal? billed=null)
+    private async Task AddMovement(long id,int line,int product,int warehouse,long? batch,decimal qty,decimal value,decimal net,decimal tax,long? original,decimal? last,CancellationToken ct,decimal? billed=null,bool valuation=false)
     {
         StockCalculation.Exact(value,8);
         await sql.ExecuteAsync("""
-            INSERT dbo.StockMovements(DocumentId,LineNumber,ProductId,WarehouseId,BatchId,Quantity,Value,Net,Tax,OriginalMovementId,LastPurchasePrice,BilledQuantity)
-            VALUES(@i,@l,@p,@w,@b,@q,@v,@n,@t,@o,@last,@billed)
-            """,ct,("@i",id),("@l",line),("@p",product),("@w",warehouse),("@b",batch),("@q",qty),("@v",value),("@n",net),("@t",tax),("@o",original),("@last",last),("@billed",billed));
+            INSERT dbo.StockMovements(DocumentId,LineNumber,ProductId,WarehouseId,BatchId,Quantity,Value,Net,Tax,OriginalMovementId,LastPurchasePrice,BilledQuantity,IsCostRevaluation)
+            VALUES(@i,@l,@p,@w,@b,@q,@v,@n,@t,@o,@last,@billed,@valuation)
+            """,ct,("@i",id),("@l",line),("@p",product),("@w",warehouse),("@b",batch),("@q",qty),("@v",value),("@n",net),("@t",tax),("@o",original),("@last",last),("@billed",billed),("@valuation",valuation));
     }
     private async Task<List<(long? Batch,decimal Quantity)>> IssueBatches(int actor,StockDocumentDraft d,StockLine l,bool tracked,decimal quantity,long? historical,CancellationToken ct)
     {
@@ -109,13 +109,14 @@ public sealed partial class StockDocumentService
             FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId WHERE h.State<>3 AND h.Kind<>11 AND OriginalMovementId=@i
             """,r=>(r.GetDecimal(0),r.GetDecimal(1),r.GetDecimal(2),r.GetDecimal(3)),ct,("@i",orig.Id))).Single();
         decimal Part(decimal total,decimal usedValue,int scale)=>StockCalculation.Allocate(total,orig.BilledQuantity??Math.Abs(orig.Quantity),qty,used.Item1,usedValue,scale);
-        var landed = (await Rows("SELECT COALESCE(SUM(m.Value),0) FROM dbo.StockMovements m JOIN dbo.StockDocuments d ON d.DocumentId=m.DocumentId WHERE m.OriginalMovementId=@i AND d.Kind=11 AND d.State=2",
+        var landed = (await Rows("SELECT COALESCE(SUM(m.Value),0) FROM dbo.StockMovements m JOIN dbo.StockDocuments d ON d.DocumentId=m.DocumentId WHERE m.OriginalMovementId=@i AND m.IsCostRevaluation=0 AND d.Kind=11 AND d.State=2",
             r=>r.GetDecimal(0),ct,("@i",orig.Id))).Single();
         var restoredFees = (await Rows("""
-            SELECT COALESCE(SUM(ABS(f.Value)),0) FROM dbo.StockMovements f
+            SELECT COALESCE(SUM(CASE WHEN r.Quantity<0 THEN -f.Value ELSE f.Value END),0) FROM dbo.StockMovements f
             JOIN dbo.StockDocuments fh ON fh.DocumentId=f.DocumentId AND fh.Kind=11 AND fh.State=2
             JOIN dbo.StockMovements r ON r.MovementId=f.OriginalMovementId AND r.OriginalMovementId=@i
             JOIN dbo.StockDocuments rh ON rh.DocumentId=r.DocumentId AND rh.State=2
+            WHERE f.IsCostRevaluation=0
             """,r=>r.GetDecimal(0),ct,("@i",orig.Id))).Single();
         return (orig,owner,Part(Math.Abs(orig.Value)+(orig.Quantity<0?-landed:landed),used.Item2+restoredFees,precision),Part(orig.Net,used.Item3,currencyPrecision),Part(orig.Tax,used.Item4,currencyPrecision));
     }
@@ -256,7 +257,7 @@ public sealed partial class StockDocumentService
                 SELECT LastNumber FROM dbo.DocumentNumbers WHERE BranchId=@b AND TypeCode=@t AND DocumentYear=@y
                 """,ct,("@b",d.BranchId),("@t",type),("@y",d.Date.Year));
             if(d.Credit) await RecordDebt(doc,effects,journal,offsets,precision,ct);
-            await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET State=2,Version=Version+1,Number=@n,JournalId=@j WHERE DocumentId=@i",ct,("@i",id),("@j",journal),("@n",number));
+            await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET State=2,Version=Version+1,Number=@n,JournalId=@j,BookPolicyAtPosting=@policy WHERE DocumentId=@i",ct,("@i",id),("@j",journal),("@n",number),("@policy",(int)a.BookPolicy));
             await Audit(actor,"STOCK_DOCUMENT_POSTED","StockDocuments",id,ct);
             return await Read(id,ct);
     }

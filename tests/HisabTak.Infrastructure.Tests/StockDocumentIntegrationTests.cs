@@ -39,6 +39,73 @@ public sealed partial class LedgerIntegrationTests
     private static Task<IReadOnlyList<DebtBalance>> Debts(SqlTestDatabase test,Store s)=>
         With<IStockDocumentService,IReadOnlyList<DebtBalance>>(test,service=>service.DebtsAsync(s.F.Owner,s.F.Branch));
 
+    private static async Task<StockDocument> AddClearance(SqlTestDatabase test,Store store,StockDocument purchase,decimal fee)
+    {
+        var settings=(await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(store.F.Owner,store.F.Branch))).Accounts!;
+        await Change<IStockDocumentService>(test,s=>s.ConfigureFeeAsync(store.F.Owner,store.F.Branch,settings.AdjustmentAccountId,FeeTreatment.InventoryByValue));
+        var draft=Draft(store,StockDocumentKind.CustomsClearance,store.Cash,purchase.Draft.Lines.ToArray()) with
+        { Customs=new(1,"Truck","YE","Parts",1,[new(settings.AdjustmentAccountId,fee,FeeTreatment.InventoryByValue)],purchase.Id) };
+        return await Trade(test,store,draft);
+    }
+
+    [SqlServerFact]
+    public async Task Late_fee_follows_transfers_purchases_and_sales_and_can_reverse()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();
+        var store=await StoreAsync(test);
+        var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+        await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,2,40)));
+        await Trade(test,store,Draft(store,StockDocumentKind.Transfer,0,new StockLine(store.Product,store.Unit,4)));
+        await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,1,40)) with {WarehouseId=store.Target});
+        await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,30)));
+        await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,7,40)));
+        var fee=await AddClearance(test,store,purchase,50);
+        var balances=await Stock(test,store,Date);
+        Assert.Equal(200,balances.Single(b=>b.WarehouseId==store.Warehouse).BookValue);
+        Assert.Equal(75,balances.Single(b=>b.WarehouseId==store.Target).BookValue);
+        Assert.Equal(10,balances.Sum(b=>b.Quantity));
+        await With<IStockDocumentService,StockDocument>(test,s=>s.ReverseAsync(store.F.Owner,fee.Id,Date,Guid.NewGuid()));
+        Assert.Equal(250,(await Stock(test,store,Date)).Sum(b=>b.BookValue));
+    }
+
+    [SqlServerFact]
+    public async Task Late_fee_preserves_later_last_purchase_price_and_receipt_policy()
+    {
+        foreach(var policy in new[]{LastPurchaseBookPolicy.KeepAcquisitionValue,LastPurchaseBookPolicy.RevalueAtReceipt})
+        {
+            await using var test=await SqlTestDatabase.CreateAsync();
+            var store=await StoreAsync(test,method:CostMethod.LastPurchase);
+            var settings=(await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(store.F.Owner,store.F.Branch))).Accounts!;
+            await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(store.F.Owner,store.F.Branch,settings with {BookPolicy=policy}));
+            var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+            await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,4,40)));
+            await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,30)));
+            await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,4,40)));
+            await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(store.F.Owner,store.F.Branch,settings with {BookPolicy=LastPurchaseBookPolicy.KeepAcquisitionValue}));
+            await AddClearance(test,store,purchase,50);
+            var balance=Assert.Single(await Stock(test,store,Date));
+            Assert.Equal(policy==LastPurchaseBookPolicy.KeepAcquisitionValue?330:360,balance.BookValue);
+            Assert.Equal(30,balance.LastPurchasePrice);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Late_fee_handles_count_adjustments_purchase_return_and_second_fee()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();
+        var store=await StoreAsync(test);
+        var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+        await Trade(test,store,Draft(store,StockDocumentKind.Increase,0,new StockLine(store.Product,store.Unit,2,20)));
+        await Trade(test,store,Draft(store,StockDocumentKind.Decrease,0,new StockLine(store.Product,store.Unit,2)));
+        await Trade(test,store,Draft(store,StockDocumentKind.PurchaseReturn,store.Cash,new StockLine(store.Product,store.Unit,2,OriginalMovementId:purchase.Movements[0].Id)));
+        await AddClearance(test,store,purchase,60);
+        var balance=Assert.Single(await Stock(test,store,Date));
+        Assert.Equal(8,balance.Quantity);
+        Assert.Equal(198,balance.BookValue);
+        await AddClearance(test,store,purchase,60);
+        Assert.Equal(236,Assert.Single(await Stock(test,store,Date)).BookValue);
+    }
+
     [SqlServerFact]
     public async Task Late_fee_handles_returns_before_and_after_adjustment_and_can_reverse()
     {
