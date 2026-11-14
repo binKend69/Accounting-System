@@ -45,7 +45,12 @@ public sealed partial class LedgerIntegrationTests
         await Change<IStockDocumentService>(test,s=>s.ConfigureFeeAsync(store.F.Owner,store.F.Branch,settings.AdjustmentAccountId,FeeTreatment.InventoryByValue));
         var draft=Draft(store,StockDocumentKind.CustomsClearance,store.Cash,purchase.Draft.Lines.ToArray()) with
         { Customs=new(1,"Truck","YE","Parts",1,[new(settings.AdjustmentAccountId,fee,FeeTreatment.InventoryByValue)],purchase.Id) };
-        return await Trade(test,store,draft);
+        var posted=await Trade(test,store,draft);
+        var ledger=await With<IJournalService,IReadOnlyList<LedgerBalance>>(test,s=>s.BalancesAsync(store.F.Owner,store.F.Branch,store.F.Currency,Date));
+        var stockAccount=ledger.Single(x=>x.AccountId==settings.StockAccountId);
+        Assert.Equal((await Stock(test,store,Date)).Sum(x=>x.BookValue),stockAccount.BaseDebit-stockAccount.BaseCredit);
+        Assert.Equal(ledger.Sum(x=>x.BaseDebit),ledger.Sum(x=>x.BaseCredit));
+        return posted;
     }
 
     [SqlServerFact]
