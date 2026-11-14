@@ -54,7 +54,8 @@ public sealed partial class LedgerIntegrationTests
         await using var test=await SqlTestDatabase.CreateAsync();
         var store=await StoreAsync(test,method:CostMethod.LastPurchase);
         var settings=(await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(store.F.Owner,store.F.Branch))).Accounts!;
-        await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(store.F.Owner,store.F.Branch,settings with {BookPolicy=LastPurchaseBookPolicy.RevalueAtReceipt}));
+        // Simulate a supported legacy setting; new settings deliberately prohibit receipt revaluation.
+        await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.StockAccountSettings SET Payload=JSON_MODIFY(Payload,'$.BookPolicy',2)");
         var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
         var next=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
         await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.StockDocuments SET BookPolicyAtPosting=NULL");
@@ -95,12 +96,13 @@ public sealed partial class LedgerIntegrationTests
             await using var test=await SqlTestDatabase.CreateAsync();
             var store=await StoreAsync(test,method:CostMethod.LastPurchase);
             var settings=(await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(store.F.Owner,store.F.Branch))).Accounts!;
-            await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(store.F.Owner,store.F.Branch,settings with {BookPolicy=policy}));
+            await using(var db=test.Context()) await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.StockAccountSettings SET Payload=JSON_MODIFY(Payload,'$.BookPolicy',{(int)policy})");
             var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
             await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,4,40)));
             await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,30)));
             await Trade(test,store,Draft(store,StockDocumentKind.Sale,store.Cash,new StockLine(store.Product,store.Unit,4,40)));
-            await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(store.F.Owner,store.F.Branch,settings with {BookPolicy=LastPurchaseBookPolicy.KeepAcquisitionValue}));
+            // Simulate an external settings change; stored posting snapshots must still win.
+            await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.StockAccountSettings SET Payload=JSON_MODIFY(Payload,'$.BookPolicy',1)");
             await AddClearance(test,store,purchase,50);
             var balance=Assert.Single(await Stock(test,store,Date));
             Assert.Equal(policy==LastPurchaseBookPolicy.KeepAcquisitionValue?330:360,balance.BookValue);
