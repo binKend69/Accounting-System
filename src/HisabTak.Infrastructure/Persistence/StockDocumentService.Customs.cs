@@ -95,7 +95,7 @@ public sealed partial class StockDocumentService
             var charges=group.ToDictionary(m=>m.Id,m=>landed[m.LineNumber]);
             if(charges.Values.Sum()==0)continue;
             var method=(CostMethod)await sql.ScalarAsync("SELECT CostMethod FROM dbo.StockProducts WHERE ProductId=@p",ct,("@p",group.Key));
-            var replay=await ReplayFees(group.Key,d.BranchId,charges,method,accounts.BookPolicy,precision,ct);
+            var replay=await ReplayFees(group.Key,d.BranchId,charges,method,precision,ct);
             foreach(var warehouse in replay.Prices.Keys)
             {
                 await Warehouse(d.BranchId,warehouse,ct);

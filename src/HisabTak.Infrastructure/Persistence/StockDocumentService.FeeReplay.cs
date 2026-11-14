@@ -6,17 +6,17 @@ namespace HisabTak.Infrastructure.Persistence;
 public sealed partial class StockDocumentService
 {
     private sealed record CostEvent(long Id,long Document,int Line,int Warehouse,long? Batch,decimal Quantity,
-        decimal Value,long? Original,decimal? LastPrice,StockDocumentKind Kind,LastPurchaseBookPolicy Policy,decimal ExtraValuation);
+        decimal Value,long? Original,decimal? LastPrice,StockDocumentKind Kind,LastPurchaseBookPolicy? Policy,decimal ExtraValuation);
     private sealed record CostEffect(CostEvent Origin,decimal Amount,bool Valuation);
     private sealed record CostReplay(IReadOnlyList<CostEffect> Effects,IReadOnlyDictionary<int,decimal> Prices);
 
     private async Task<CostReplay> ReplayFees(int product,int branch,IReadOnlyDictionary<long,decimal> charges,
-        CostMethod method,LastPurchaseBookPolicy legacyPolicy,int precision,CancellationToken ct)
+        CostMethod method,int precision,CancellationToken ct)
     {
         var events=await Rows("""
             SELECT m.MovementId,m.DocumentId,m.LineNumber,m.WarehouseId,m.BatchId,m.Quantity,
                 m.Value+COALESCE(f.Cost,0),m.OriginalMovementId,m.LastPurchasePrice,h.Kind,
-                COALESCE(h.BookPolicyAtPosting,@policy),COALESCE(f.Valuation,0)
+                h.BookPolicyAtPosting,COALESCE(f.Valuation,0)
             FROM dbo.StockMovements m JOIN dbo.StockDocuments h ON h.DocumentId=m.DocumentId
             OUTER APPLY(SELECT SUM(CASE WHEN x.IsCostRevaluation=0 THEN x.Value ELSE 0 END) Cost,
                 SUM(CASE WHEN x.IsCostRevaluation=1 THEN x.Value ELSE 0 END) Valuation
@@ -28,8 +28,8 @@ public sealed partial class StockDocumentService
             """,r=>new CostEvent(r.GetInt64(0),r.GetInt64(1),r.GetInt32(2),r.GetInt32(3),
                 r.IsDBNull(4)?null:r.GetInt64(4),r.GetDecimal(5),r.GetDecimal(6),
                 r.IsDBNull(7)?null:r.GetInt64(7),r.IsDBNull(8)?null:r.GetDecimal(8),
-                (StockDocumentKind)r.GetInt32(9),(LastPurchaseBookPolicy)r.GetInt32(10),r.GetDecimal(11)),
-            ct,("@b",branch),("@p",product),("@policy",(int)legacyPolicy));
+                (StockDocumentKind)r.GetInt32(9),r.IsDBNull(10)?null:(LastPurchaseBookPolicy)r.GetInt32(10),r.GetDecimal(11)),
+            ct,("@b",branch),("@p",product));
         var positions=new Dictionary<int,StockPosition>();
         var deltas=new Dictionary<int,StockPosition>();
         var changes=new Dictionary<long,decimal>();
@@ -70,8 +70,19 @@ public sealed partial class StockDocumentService
             }
             if(quantity>0)
             {
-                var baseline=StockCalculation.Receive(beforeSource,quantity,value,method,precision,purchase,first.Policy);
-                var revised=StockCalculation.Receive(adjusted,quantity,value+amountDelta,method,precision,purchase,first.Policy);
+                var policy=first.Policy ?? LastPurchaseBookPolicy.KeepAcquisitionValue;
+                if(first.Policy is null && method==CostMethod.LastPurchase && purchase)
+                {
+                    // Infer only when the recorded receipt distinguishes the policies.
+                    var priorDifference=StockCalculation.Round(beforeSource.Quantity*StockCalculation.Round(value/quantity,8),precision)-beforeSource.BookValue;
+                    var revisedDifference=StockCalculation.Round(adjusted.Quantity*StockCalculation.Round((value+amountDelta)/quantity,8),precision)-adjusted.BookValue;
+                    if(priorDifference!=0)
+                        policy=group.Any(x=>x.Quantity==0 && x.Value!=0)?LastPurchaseBookPolicy.RevalueAtReceipt:LastPurchaseBookPolicy.KeepAcquisitionValue;
+                    else if(revisedDifference!=0)
+                        throw new InvalidOperationException("تعذر تحديد سياسة تقييم مستند قديم. راجع سياسة آخر شراء التاريخية قبل ترحيل الرسوم.");
+                }
+                var baseline=StockCalculation.Receive(beforeSource,quantity,value,method,precision,purchase,policy);
+                var revised=StockCalculation.Receive(adjusted,quantity,value+amountDelta,method,precision,purchase,policy);
                 valuationDelta=revised.Revaluation-baseline.Revaluation;
                 deltas[first.Warehouse]=new(0,delta.BookValue+amountDelta+valuationDelta,revised.Position.LastPurchasePrice-baseline.Position.LastPurchasePrice);
             }

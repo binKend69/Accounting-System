@@ -49,6 +49,25 @@ public sealed partial class LedgerIntegrationTests
     }
 
     [SqlServerFact]
+    public async Task Legacy_last_purchase_policy_is_not_guessed_from_current_configuration()
+    {
+        await using var test=await SqlTestDatabase.CreateAsync();
+        var store=await StoreAsync(test,method:CostMethod.LastPurchase);
+        var settings=(await With<IStockDocumentService,StockLookups>(test,s=>s.LookupsAsync(store.F.Owner,store.F.Branch))).Accounts!;
+        await Change<IStockDocumentService>(test,s=>s.ConfigureAsync(store.F.Owner,store.F.Branch,settings with {BookPolicy=LastPurchaseBookPolicy.RevalueAtReceipt}));
+        var purchase=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+        var next=await Trade(test,store,Draft(store,StockDocumentKind.Purchase,store.Cash,new StockLine(store.Product,store.Unit,10,20)));
+        await using(var db=test.Context()) await db.Database.ExecuteSqlRawAsync("UPDATE dbo.StockDocuments SET BookPolicyAtPosting=NULL");
+        // Equal-price legacy receipts have no revaluation evidence. Do not silently pick a policy.
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>AddClearance(test,store,purchase,50));
+        Assert.Equal(400,Assert.Single(await Stock(test,store,Date)).BookValue);
+        // A recorded policy resolves the ambiguity; a later receipt resets valuation to its price.
+        await using(var db=test.Context()) await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE dbo.StockDocuments SET BookPolicyAtPosting=2 WHERE DocumentId={next.Id}");
+        await AddClearance(test,store,purchase,50);
+        Assert.Equal(400,Assert.Single(await Stock(test,store,Date)).BookValue);
+    }
+
+    [SqlServerFact]
     public async Task Late_fee_follows_transfers_purchases_and_sales_and_can_reverse()
     {
         await using var test=await SqlTestDatabase.CreateAsync();
