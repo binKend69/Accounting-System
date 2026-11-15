@@ -33,7 +33,7 @@ public partial class StockWindow
     });
     private async void ApplySaleCoupon(object sender,RoutedEventArgs e)=>await Run(async()=>
     {
-        if(!CouponControls.IsEnabled)return;
+        if(current is {State:not 1} or {ConvertedInvoiceId:not null})return;
         var draft=await CouponService(s=>s.ApplyCouponAsync(actor,Build(),SaleCoupon.Text));
         appliedCoupon=draft.CouponCode;SaleCoupon.Text=appliedCoupon;rows.Clear();
         foreach(var line in draft.Lines)rows.Add(new(line,Product(line.ProductId),UnitName(line.UnitId)));
