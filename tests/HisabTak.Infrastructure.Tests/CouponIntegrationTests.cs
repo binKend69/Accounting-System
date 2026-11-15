@@ -48,7 +48,7 @@ public sealed partial class LedgerIntegrationTests
             try{await With<IStockDocumentService,StockDocument>(test,p=>p.PostAsync(s.F.Owner,d.Id,d.Version));return true;}
             catch(CouponException){return false;}
         }
-        var results=await Task.WhenAll(PostCoupon(first),PostCoupon(second));Assert.Single(results.Where(x=>x));
+        var results=await Task.WhenAll(PostCoupon(first),PostCoupon(second));Assert.Single(results,x=>x);
         Assert.Equal(1,await CouponUses(test,s));Assert.Equal(9,Assert.Single(await Stock(test,s,Date)).Quantity);
         Assert.Equal(2,await Count(test,"JournalEntries"));
     }

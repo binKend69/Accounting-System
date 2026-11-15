@@ -96,7 +96,12 @@ internal static class SqlUiSmoke
             Check((await Use<IStockDocumentService,StockDocument>(x=>x.GetAsync(actor,ret.Id))).State==3,"UI reverse failed.");
             var balances=await Use<IStockDocumentService,IReadOnlyList<StockBalance>>(x=>x.BalancesAsync(actor,setup.Branch,DateOnly.FromDateTime(DateTime.Today)));
             Check(balances.Sum(x=>x.Quantity)==17 && balances.Sum(x=>x.BookValue)==425,"SQL balance differs after UI reversal.");
-            Capture(window,"sql-reversed-return");window.Close();
+            Capture(window,"sql-reversed-return");
+            ((TabItem)window.FindName("CouponsTab")).IsSelected=true;
+            Text("NewCouponCode","UI-COUPON");Text("CouponValue","5");
+            await Click(window,"CreateCouponButton");
+            Check((await Use<ICouponService,IReadOnlyList<CouponInfo>>(x=>x.CouponsAsync(actor,setup.Branch))).Count==1,"Coupon UI creation failed.");
+            Capture(window,"sql-coupons");window.Close();
             var reader=await Use<HisabTakDbContext,int>(async db=>
             {
                 var u=new User("ui-reader",services.GetRequiredService<IPasswordHasher>().Hash(password));db.Users.Add(u);await db.SaveChangesAsync();
@@ -120,16 +125,22 @@ internal static class SqlUiSmoke
             ((ComboBox)cashier.FindName("Party")).SelectedValue = cash;
             ((TextBox)cashier.FindName("Price")).Text = "30";
             await Click(cashier, "AddStockLineButton");
+            ((TextBox)cashier.FindName("SaleCoupon")).Text="UI-COUPON";
+            await Click(cashier,"ApplyCouponButton");
+            Check(((StockWindow.DisplayLine)((DataGrid)cashier.FindName("Lines")).Items[0]).Line.Discount==5,"Cashier coupon was not applied.");
             await Click(cashier, "PayPosButton");
             var paidSlot = await Use<IPosSlots,PosSlot>(s => s.LoadAsync(actor,setup.Branch,1));
             Check(paidSlot.LastReceiptId.HasValue && paidSlot.Draft == null, "Cashier payment was not committed.");
+            var couponSale=await Use<IStockDocumentService,StockDocument>(x=>x.GetAsync(actor,paidSlot.LastReceiptId!.Value));
+            Check(couponSale.Draft.CouponCode=="UI-COUPON" && couponSale.Movements.Sum(x=>x.Net)==25,"Coupon sale amount changed.");
+            Check((await Use<ICouponService,IReadOnlyList<CouponInfo>>(x=>x.CouponsAsync(actor,setup.Branch)))[0].Used==1,"Coupon redemption missing.");
             await Click(cashier, "ReprintReceipt");
             await Click(cashier, "ReprintKitchen");
             Check((await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(s => s.ListAsync(actor,setup.Branch))).Count == 5,
                 "Printing repeated a sale.");
             cashier.Close();
             await AdministrationSmoke.Run(services, actor, reader, setup.Branch, password);
-            Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection. Confirmation dialogs use a test adapter; services and SQL are real.");
+            Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection, coupon creation and cashier redemption. Confirmation dialogs use a test adapter; services and SQL are real.");
         }
         finally
         {
