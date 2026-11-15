@@ -14,6 +14,7 @@ public sealed record StockDocumentDraft(Guid SourceKey, int BranchId, StockDocum
     bool Credit, IReadOnlyList<StockLine> Lines, bool TaxEnabled = false, decimal TaxRate = 0m, bool PricesIncludeTax = false)
 {
     public CustomsDeclaration? Customs { get; init; }
+    public string? CouponCode { get; init; }
 }
 public sealed record CustomsDeclaration(int VehicleCount, string VehicleNumber, string Country, string Goods, int DeclarationType,
     IReadOnlyList<CustomsCharge> Charges, long? PurchaseId = null);

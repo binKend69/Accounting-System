@@ -5,6 +5,7 @@ public sealed record FiscalPeriodLookup(int Id, string Label);
 public sealed record AccountLookup(int Id, string Label, int CurrencyId, int? GeneralGroupId)
 {
     public bool IsCash { get; init; }
+    public bool IsCustomer { get; init; }
 }
 public sealed record AccountingWorkspace(IReadOnlyList<AccountingLookup> Branches, IReadOnlyList<AccountLookup> Accounts,
     IReadOnlyList<AccountingLookup> Currencies, IReadOnlyList<AccountingLookup> Groups,

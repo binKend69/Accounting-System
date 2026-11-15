@@ -48,6 +48,7 @@ public static class DatabaseRegistration
         services.AddScoped<StockDocumentService>();
         services.AddScoped<HisabTak.Application.Inventory.IStockDocumentService>(p => p.GetRequiredService<StockDocumentService>());
         services.AddScoped<HisabTak.Application.Inventory.IPosSlots>(p => p.GetRequiredService<StockDocumentService>());
+        services.AddScoped<HisabTak.Application.Inventory.ICouponService>(p => p.GetRequiredService<StockDocumentService>());
         services.AddScoped<IDatabaseBackupService, SqlServerBackupService>();
         return services;
     }

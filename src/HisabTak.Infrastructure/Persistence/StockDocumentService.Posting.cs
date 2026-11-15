@@ -258,6 +258,7 @@ public sealed partial class StockDocumentService
                 """,ct,("@b",d.BranchId),("@t",type),("@y",d.Date.Year));
             if(d.Credit) await RecordDebt(doc,effects,journal,offsets,precision,ct);
             await sql.ExecuteAsync("UPDATE dbo.StockDocuments SET State=2,Version=Version+1,Number=@n,JournalId=@j,BookPolicyAtPosting=@policy WHERE DocumentId=@i",ct,("@i",id),("@j",journal),("@n",number),("@policy",(int)a.BookPolicy));
+            await RedeemCoupon(doc,ct);
             await Audit(actor,"STOCK_DOCUMENT_POSTED","StockDocuments",id,ct);
             return await Read(id,ct);
     }

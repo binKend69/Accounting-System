@@ -67,6 +67,7 @@ public partial class StockWindow
             }
             if (!kitchen)
             {
+                if(document.Draft.CouponCode is string coupon) Row($"الكوبون: {coupon}");
                 var net = document.Movements.Sum(x => x.Net);
                 var tax = document.Movements.Sum(x => x.Tax);
                 Row($"الصافي {net:G29} · الضريبة {tax:G29}");

@@ -278,6 +278,7 @@ public sealed partial class StockDocumentService(HisabTakDbContext db, IAuthoriz
             StockCalculation.Exact(l.ShippingWeight,8);
             StockCalculation.Exact(l.Quantity,8); StockCalculation.Exact(l.UnitPrice,8); StockCalculation.Exact(l.Discount,8);
         }
+        await ValidateCoupon(d,ct);
     }
     private async Task<StockDocumentDraft> ReturnHeader(int actor,StockDocumentDraft draft,CancellationToken ct)
     {

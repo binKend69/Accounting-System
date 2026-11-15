@@ -62,6 +62,7 @@ public partial class StockWindow : Window
             throw new ArgumentException("Original unit unavailable.");
         current = null;
         source = Guid.NewGuid();
+        appliedCoupon=null;SaleCoupon.Clear();
         rows.Clear();
         Moves.ItemsSource = null;
         Kind.SelectedValue = (int)(invoice.Draft.Kind == StockDocumentKind.Purchase ? StockDocumentKind.PurchaseReturn : StockDocumentKind.SalesReturn);
@@ -94,6 +95,7 @@ public partial class StockWindow : Window
         Bind(Kind,Kinds); Kind.SelectedValue=(int)StockDocumentKind.Purchase;
         Lines.ItemsSource=rows; EntryDate.SelectedDate=ReverseDate.SelectedDate=AsOf.SelectedDate=PaymentDate.SelectedDate=DateTime.Today;
         Item.SelectionChanged+=RefreshLineOptions; Warehouse.SelectionChanged+=RefreshLineOptions;
+        InitializeCoupons();
         Closing+=(_,e)=>{ if(busy || !Discard()) e.Cancel=true; };
     }
     private static void Bind(ComboBox box,IEnumerable<Choice> choices)
@@ -115,6 +117,7 @@ public partial class StockWindow : Window
         if(busy) return;
         busy=true; Tabs.IsEnabled=false; PosCommands.IsEnabled=false;
         try { await work(); }
+        catch(CouponException ex){Status.Text=ex.Message;}
         catch(UnauthorizedAccessException){Status.Text="لا تملك صلاحية هذه العملية في الفرع.";}
         catch(InvalidOperationException ex) when (ex.Message == "Later movements require a landed cost adjustment.") { Status.Text = "حدثت حركة مخزنية لاحقة لهذا الصنف. يتطلب توزيع الرسم تسوية تكلفة للمخزون والبضاعة المصروفة."; }
         catch(InvalidOperationException ex) when (ex.Message == "Review customs fee rules.") { Status.Text = "حدد قاعدة الحساب ثم أعد إضافة الرسم غير المصنف أو الذي تغير تصنيفه قبل الترحيل."; }
@@ -191,7 +194,7 @@ public partial class StockWindow : Window
         var kind=(StockDocumentKind)Id(Kind);
         var trade=kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder or StockDocumentKind.Purchase or StockDocumentKind.Sale or StockDocumentKind.PurchaseReturn or StockDocumentKind.SalesReturn;
         return new StockDocumentDraft(source,branch,kind,Day(EntryDate),Id(Warehouse),kind==StockDocumentKind.Transfer?Id(Target):null,Id(InvoiceCurrency),Number(InvoiceRate),kind==StockDocumentKind.CustomsClearance ? Party.SelectedValue as int? ?? 0 : trade?Id(Party):0,
-            (trade || kind==StockDocumentKind.CustomsClearance) && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true) { Customs = kind == StockDocumentKind.CustomsClearance ? ReadDeclaration() : null };
+            (trade || kind==StockDocumentKind.CustomsClearance) && Credit.IsChecked==true,rows.Select(x=>x.Line).ToArray(),TaxEnabled.IsChecked==true,TaxEnabled.IsChecked==true?Number(TaxRate)/100m:0m,TaxEnabled.IsChecked==true && Inclusive.IsChecked==true) { CouponCode=appliedCoupon, Customs = kind == StockDocumentKind.CustomsClearance ? ReadDeclaration() : null };
     }
     private bool Dirty()
     {
@@ -206,6 +209,7 @@ public partial class StockWindow : Window
     {
         PreviewButton.IsEnabled=current!=null;SaveButton.IsEnabled=current?.State is null or 1;PostButton.IsEnabled=current?.State==1;ReverseButton.IsEnabled=current?.State==2;
         PrintSaleButton.Visibility = KitchenCopyButton.Visibility = current is { State: 2, Draft.Kind: StockDocumentKind.Sale } ? Visibility.Visible : Visibility.Collapsed;
+        CouponControls.IsEnabled=current?.State is null or 1;
         CustomsFields.IsEnabled = current?.State is null or 1;
         var intent = current?.Draft.Kind is StockDocumentKind.SalesQuote or StockDocumentKind.PurchaseOrder;
         ConvertButton.Visibility = intent ? Visibility.Visible : Visibility.Collapsed;
@@ -219,7 +223,7 @@ public partial class StockWindow : Window
     }
     private void ShowDocument(StockDocument doc)
     {
-        current=doc;var d=doc.Draft;ShowDeclaration(d.Customs);source=d.SourceKey;Kind.SelectedValue=(int)d.Kind;EntryDate.SelectedDate=d.Date.ToDateTime(TimeOnly.MinValue);
+        current=doc;var d=doc.Draft;appliedCoupon=d.CouponCode;SaleCoupon.Text=appliedCoupon??"";ShowDeclaration(d.Customs);source=d.SourceKey;Kind.SelectedValue=(int)d.Kind;EntryDate.SelectedDate=d.Date.ToDateTime(TimeOnly.MinValue);
         InvoiceCurrency.SelectedValue=d.CurrencyId;InvoiceRate.Text=d.RateToBase.ToString("G29",CultureInfo.InvariantCulture);
         Warehouse.SelectedValue=d.WarehouseId;Target.SelectedValue=d.TargetWarehouseId;Party.SelectedValue=d.CounterpartyAccountId;Credit.IsChecked=d.Credit;
         TaxEnabled.IsChecked=d.TaxEnabled;TaxRate.Text=(d.TaxRate*100).ToString("G29",CultureInfo.InvariantCulture);Inclusive.IsChecked=d.PricesIncludeTax;
@@ -228,7 +232,7 @@ public partial class StockWindow : Window
     }
     private void NewDocument(object sender,RoutedEventArgs e)
     {
-        if(!Discard())return;ShowDeclaration(null);Original.Clear();current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
+        if(!Discard())return;appliedCoupon=null;SaleCoupon.Clear();ShowDeclaration(null);Original.Clear();current=null;source=Guid.NewGuid();rows.Clear();Moves.ItemsSource=null;EntryDate.SelectedDate=DateTime.Today;
         InvoiceCurrency.SelectedValue=currency;InvoiceRate.Text="1";Credit.IsChecked=TaxEnabled.IsChecked=Inclusive.IsChecked=false;TaxRate.Text="0";Buttons();Status.Text="مستند جديد.";
     }
     private async void AddLine(object sender,RoutedEventArgs e)=>await Run(()=> {

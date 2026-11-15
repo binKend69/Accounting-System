@@ -26,6 +26,7 @@ public partial class StockWindow
         await using var scope = scopes.CreateAsyncScope();
         var saved = await scope.ServiceProvider.GetRequiredService<IPosSlots>().LoadAsync(actor, branch, number);
         var draft = saved.Draft;
+        appliedCoupon=draft?.CouponCode;SaleCoupon.Text=appliedCoupon??"";
         lastReceipt = saved.LastReceiptId;
         slotNumber = number;
         slotVersion = saved.Version;

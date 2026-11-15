@@ -23,7 +23,8 @@ public sealed class AccountingWorkspaceService(HisabTakDbContext db, IAuthorizat
             accounts = await db.Accounts.AsNoTracking().Where(x => x.BranchId == branch && x.IsActive && !x.IsSuspended)
                 .OrderBy(x => x.AccountCode).Select(x => new AccountLookup(x.Id, x.AccountCode + " — " + x.NameAr, x.CurrencyId, x.GeneralGroupId)
                 {
-                    IsCash = db.AccountGeneralGroups.Any(g => g.Id == x.GeneralGroupId && g.SystemCode == "CASH")
+                    IsCash = db.AccountGeneralGroups.Any(g => g.Id == x.GeneralGroupId && g.SystemCode == "CASH"),
+                    IsCustomer = db.AccountGeneralGroups.Any(g => g.Id == x.GeneralGroupId && g.SystemCode == "CUSTOMER")
                 }).ToListAsync(cancellationToken);
         }
         return new(branches, accounts,
