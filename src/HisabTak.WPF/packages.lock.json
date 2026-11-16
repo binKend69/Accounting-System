@@ -497,7 +497,8 @@
           "Microsoft.Extensions.Hosting": "[10.0.14, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )",
           "Serilog.Extensions.Hosting": "[10.0.0, )",
-          "Serilog.Sinks.File": "[7.0.0, )"
+          "Serilog.Sinks.File": "[7.0.0, )",
+          "Dapper": "[2.1.89, )"
         }
       },
       "BCrypt.Net-Next": {
@@ -577,6 +578,12 @@
         "dependencies": {
           "Serilog": "4.2.0"
         }
+      },
+      "Dapper": {
+        "type": "CentralTransitive",
+        "requested": "[2.1.89, )",
+        "resolved": "2.1.89",
+        "contentHash": "KqJhWoKwV5xSCOCBqAnzUGFPcicXObPzGZS7e4RPI7vbeihxCdRCPkd4aWsjgaeZBEARrxSC7BVg4zGS6/coDg=="
       }
     }
   }

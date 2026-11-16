@@ -43,6 +43,7 @@ public static class DatabaseRegistration
             ("RECEIPT_VOUCHER", JournalKind.Standard), ("PAYMENT_VOUCHER", JournalKind.Standard) })
             services.AddScoped<IJournalDocumentStrategy>(provider => new JournalDocumentStrategy(provider.GetRequiredService<HisabTakDbContext>(), code, kind));
         services.AddScoped<IJournalDocumentService, JournalDocumentService>();
+        services.AddScoped<IFinancialReports, FinancialReports>();
         services.AddScoped<IAccountingWorkspaceService, AccountingWorkspaceService>();
         services.AddScoped<HisabTak.Application.Inventory.IInventorySetupService, InventorySetupService>();
         services.AddScoped<StockDocumentService>();

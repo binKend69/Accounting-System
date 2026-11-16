@@ -750,6 +750,12 @@
         "requested": "[10.0.14, )",
         "resolved": "10.0.14",
         "contentHash": "QtpQzuSZVyTPCuHW058yCs9Nj0394uUkNyFHS813nOmK9UgUdBdaprJ5PPsBgsQIpxADTsTkbaMMonykem6qdw=="
+      },
+      "Dapper": {
+        "type": "Direct",
+        "requested": "[2.1.89, )",
+        "resolved": "2.1.89",
+        "contentHash": "KqJhWoKwV5xSCOCBqAnzUGFPcicXObPzGZS7e4RPI7vbeihxCdRCPkd4aWsjgaeZBEARrxSC7BVg4zGS6/coDg=="
       }
     }
   }

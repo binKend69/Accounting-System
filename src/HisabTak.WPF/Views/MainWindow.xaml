@@ -96,6 +96,19 @@
                 </TabItem>
                 <TabItem Name="AdministrationTab" Header="الإدارة"><Button Content="إدارة المراجع والصلاحيات" Click="Administration_Click" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16"/></TabItem>
                 <TabItem Header="المبيعات والمخزون"><StackPanel Margin="24" HorizontalAlignment="Right"><TextBlock Text="فواتير الفرع وحركة المخزون" FontSize="22"/><Button Content="فتح المبيعات والمشتريات والمخزون" Click="StockWindow_Click" Margin="0,12"/></StackPanel></TabItem>
+                <TabItem x:Name="ReportsTab" Header="ميزان المراجعة">
+                    <DockPanel Margin="16"><StackPanel DockPanel.Dock="Top">
+                        <TextBlock Text="ميزان المراجعة التاريخي للفرع" FontSize="23" FontWeight="SemiBold"/>
+                        <TextBlock Text="الرصيد الافتتاحي + حركة الفترة = الرصيد الختامي. يشمل الحسابات ذات التاريخ المالي حتى إن أُخفيت أو أُوقفت." TextWrapping="Wrap"/>
+                        <WrapPanel><Label Content="من"/><DatePicker x:Name="TrialFrom" SelectedDateChanged="ClearTrialBalance"/><Label Content="إلى"/><DatePicker x:Name="TrialTo" SelectedDateChanged="ClearTrialBalance"/><Label Content="العملة"/><ComboBox x:Name="TrialCurrency" DisplayMemberPath="Label" SelectedValuePath="Id" SelectionChanged="ClearTrialBalance"/><Button x:Name="TrialRefresh" Content="عرض التقرير" Click="RefreshTrialBalance"/></WrapPanel>
+                        <TextBlock x:Name="TrialTotals" TextWrapping="Wrap" Margin="0,10"/>
+                    </StackPanel><DataGrid x:Name="TrialGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False"><DataGrid.Columns>
+                        <DataGridTextColumn Header="الكود" Binding="{Binding Code}"/><DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="2*"/>
+                        <DataGridTextColumn Header="افتتاحي مدين" Binding="{Binding OpeningDebit}" Width="*"/><DataGridTextColumn Header="افتتاحي دائن" Binding="{Binding OpeningCredit}" Width="*"/>
+                        <DataGridTextColumn Header="حركة مدين" Binding="{Binding PeriodDebit}" Width="*"/><DataGridTextColumn Header="حركة دائن" Binding="{Binding PeriodCredit}" Width="*"/>
+                        <DataGridTextColumn Header="ختامي مدين" Binding="{Binding ClosingDebit}" Width="*"/><DataGridTextColumn Header="ختامي دائن" Binding="{Binding ClosingCredit}" Width="*"/>
+                    </DataGrid.Columns></DataGrid></DockPanel>
+                </TabItem>
                 <TabItem x:Name="CashTab" Header="أرصدة الخزائن">
                     <DockPanel Margin="16">
                         <StackPanel DockPanel.Dock="Top">

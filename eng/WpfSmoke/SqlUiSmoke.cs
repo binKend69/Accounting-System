@@ -12,6 +12,8 @@ using HisabTak.Domain.Inventory;
 using HisabTak.Domain.Security;
 using HisabTak.Infrastructure.Persistence;
 using HisabTak.WPF.Views;
+using HisabTak.WPF.ViewModels;
+using Microsoft.Extensions.Logging;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,8 +141,29 @@ internal static class SqlUiSmoke
             Check((await Use<IStockDocumentService,IReadOnlyList<StockDocument>>(s => s.ListAsync(actor,setup.Branch))).Count == 5,
                 "Printing repeated a sale.");
             cashier.Close();
+            var reports=new MainWindow(new MainWindowViewModel(new HisabTak.Application.ApplicationIdentity("HisabTak","SQL reports")),
+                services.GetRequiredService<IServiceScopeFactory>(),services.GetRequiredService<ILogger<MainWindow>>());
+            windows.Add(reports);reports.Show();
+            ((TextBox)reports.FindName("Username")).Text="ui-owner";((PasswordBox)reports.FindName("Password")).Password=password;
+            async Task ReportClick(string button)
+            {
+                ((Button)reports.FindName(button)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var until=DateTime.UtcNow.AddSeconds(45);
+                while(!((FrameworkElement)reports.FindName("WorkspacePanel")).IsEnabled)
+                {if(DateTime.UtcNow>until)throw new TimeoutException("Report UI did not finish.");await Task.Delay(20);}
+                reports.UpdateLayout();
+            }
+            await ReportClick("LoginButton");
+            ((TabItem)reports.FindName("ReportsTab")).IsSelected=true;
+            await ReportClick("TrialRefresh");
+            var reportRows=((DataGrid)reports.FindName("TrialGrid")).Items.Cast<TrialBalanceRow>().ToArray();
+            Check(reportRows.Length>0 && reportRows.Sum(x=>x.ClosingDebit)==reportRows.Sum(x=>x.ClosingCredit),"UI trial balance did not reconcile.");
+            Capture(reports,"sql-trial-balance");
+            ((DatePicker)reports.FindName("TrialTo")).SelectedDate=DateTime.Today.AddDays(-1);
+            Check(((DataGrid)reports.FindName("TrialGrid")).Items.Count==0,"Report displayed stale dates.");
+            reports.Close();
             await AdministrationSmoke.Run(services, actor, reader, setup.Branch, password);
-            Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection, coupon creation and cashier redemption. Confirmation dialogs use a test adapter; services and SQL are real.");
+            Console.WriteLine("Real SQL WPF acceptance passed: authentication, purchases 20/30, sale, original return, history filters/open, dependent reversal rejection, reversal, balances, read-only permission rejection, coupon creation and cashier redemption, historical trial balance. Confirmation dialogs use a test adapter; services and SQL are real.");
         }
         finally
         {

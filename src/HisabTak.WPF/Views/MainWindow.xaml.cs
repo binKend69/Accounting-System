@@ -222,6 +222,7 @@ public partial class MainWindow : Window
     private async Task LoadBranch()
     {
         CashGrid.ItemsSource = null;
+        ClearTrialBalance(this,new RoutedEventArgs());
         ClearInventory();
         var workspace = await Use<IAccountingWorkspaceService, AccountingWorkspace>(s => s.LoadAsync(Actor, Branch));
         Accounts.Clear(); foreach (var item in workspace.Accounts) Accounts.Add(item);
@@ -230,6 +231,9 @@ public partial class MainWindow : Window
         CashCurrency.ItemsSource = workspace.Currencies;
         CashCurrency.SelectedValue = baseCurrencyId;
         if (CashCurrency.SelectedIndex < 0 && CashCurrency.Items.Count > 0) CashCurrency.SelectedIndex = 0;
+        TrialFrom.SelectedDate=new DateTime(DateTime.Today.Year,1,1);TrialTo.SelectedDate=DateTime.Today;
+        TrialCurrency.ItemsSource=new[]{new AccountingLookup(0,"عملة الأساس — القيم الدفترية التاريخية")}.Concat(workspace.Currencies).ToArray();
+        TrialCurrency.SelectedValue=0;
         PeriodBox.ItemsSource = workspace.Periods;
         GroupBox.ItemsSource = workspace.Groups; CurrencyBox.ItemsSource = workspace.Currencies;
         GeneralGroupBox.ItemsSource = workspace.GeneralGroups; BaseCurrencyBox.ItemsSource = workspace.Currencies;
