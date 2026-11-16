@@ -645,6 +645,7 @@
         "type": "Project",
         "dependencies": {
           "BCrypt.Net-Next": "[4.2.1, )",
+          "Dapper": "[2.1.89, )",
           "HisabTak.Application": "[0.1.0, )",
           "HisabTak.Domain": "[0.1.0, )",
           "Microsoft.Data.SqlClient": "[6.1.8, )",
@@ -652,8 +653,7 @@
           "Microsoft.Extensions.Hosting": "[10.0.14, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.14, )",
           "Serilog.Extensions.Hosting": "[10.0.0, )",
-          "Serilog.Sinks.File": "[7.0.0, )",
-          "Dapper": "[2.1.89, )"
+          "Serilog.Sinks.File": "[7.0.0, )"
         }
       },
       "BCrypt.Net-Next": {
@@ -661,6 +661,12 @@
         "requested": "[4.2.1, )",
         "resolved": "4.2.1",
         "contentHash": "cJ1Zaad8sBSQJq3QBSPmFuLq0XDi9ys0Dk5S11gakZ2qdFWC1aaRLZ7sqOLQjGJYhgIK3LW3TixJswM6+CVbyw=="
+      },
+      "Dapper": {
+        "type": "CentralTransitive",
+        "requested": "[2.1.89, )",
+        "resolved": "2.1.89",
+        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
       },
       "Microsoft.Data.SqlClient": {
         "type": "CentralTransitive",
@@ -765,12 +771,6 @@
         "dependencies": {
           "Serilog": "4.2.0"
         }
-      },
-      "Dapper": {
-        "type": "CentralTransitive",
-        "requested": "[2.1.89, )",
-        "resolved": "2.1.89",
-        "contentHash": "KqJhWoKwV5xSCOCBqAnzUGFPcicXObPzGZS7e4RPI7vbeihxCdRCPkd4aWsjgaeZBEARrxSC7BVg4zGS6/coDg=="
       }
     }
   }

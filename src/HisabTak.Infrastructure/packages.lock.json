@@ -8,6 +8,12 @@
         "resolved": "4.2.1",
         "contentHash": "cJ1Zaad8sBSQJq3QBSPmFuLq0XDi9ys0Dk5S11gakZ2qdFWC1aaRLZ7sqOLQjGJYhgIK3LW3TixJswM6+CVbyw=="
       },
+      "Dapper": {
+        "type": "Direct",
+        "requested": "[2.1.89, )",
+        "resolved": "2.1.89",
+        "contentHash": "1VjFE664wnxvuhlgP8kS4PeFFF4jqD3VkbIHW6Zlc52zuibgcz5ICnIHcQXlTp6pURpPNGLV0ZpNe5x9KePJnA=="
+      },
       "Microsoft.Data.SqlClient": {
         "type": "Direct",
         "requested": "[6.1.8, )",
@@ -750,12 +756,6 @@
         "requested": "[10.0.14, )",
         "resolved": "10.0.14",
         "contentHash": "QtpQzuSZVyTPCuHW058yCs9Nj0394uUkNyFHS813nOmK9UgUdBdaprJ5PPsBgsQIpxADTsTkbaMMonykem6qdw=="
-      },
-      "Dapper": {
-        "type": "Direct",
-        "requested": "[2.1.89, )",
-        "resolved": "2.1.89",
-        "contentHash": "KqJhWoKwV5xSCOCBqAnzUGFPcicXObPzGZS7e4RPI7vbeihxCdRCPkd4aWsjgaeZBEARrxSC7BVg4zGS6/coDg=="
       }
     }
   }
